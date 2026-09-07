@@ -8,10 +8,12 @@ export type Chain = string;
 export interface WalletQueryOptions {
   /** Max rows fetched per matched address field, per subgraph (default 100). */
   limit?: number;
-  /** How many top-ranked subgraphs to search per category (default 3). */
-  topN?: number;
+  /** How many subgraphs to try per individual keyword (default 1). */
+  perKeywordLimit?: number;
   /** Overrides the default keyword(s) used to search for this category's subgraphs. */
   keywords?: string[];
+  /** How many levels of nested object fields (transaction, pool, token0, ...) to expand (default 2). */
+  selectionDepth?: number;
 }
 
 interface ResultSource {
@@ -34,6 +36,8 @@ export interface TokenTransfer {
   amount: string | undefined;
   timestamp: string | undefined;
   transactionHash: string | undefined;
+  /** transaction.from — the wallet that initiated + paid gas, which can differ from `from` above. */
+  feePayer: string | undefined;
   source: ResultSource;
   raw: Record<string, unknown>;
 }
@@ -44,8 +48,16 @@ export interface SwapActivity {
   matchedField: string;
   amount0: string | undefined;
   amount1: string | undefined;
+  amount0In: string | undefined;
+  amount0Out: string | undefined;
+  amount1In: string | undefined;
+  amount1Out: string | undefined;
+  sqrtPriceX96: string | undefined;
+  tick: string | undefined;
+  logIndex: string | undefined;
   timestamp: string | undefined;
   transactionHash: string | undefined;
+  feePayer: string | undefined;
   source: ResultSource;
   raw: Record<string, unknown>;
 }
@@ -56,8 +68,25 @@ export interface NftOwnership {
   tokenId: string | undefined;
   from: string | undefined;
   to: string | undefined;
+  seller: string | undefined;
+  buyer: string | undefined;
+  priceUSD: string | undefined;
   timestamp: string | undefined;
   transactionHash: string | undefined;
+  feePayer: string | undefined;
+  source: ResultSource;
+  raw: Record<string, unknown>;
+}
+
+export interface LendingActivity {
+  id: string;
+  wallet: string;
+  matchedField: string;
+  action: string; // the matched query field name, e.g. "deposits", "borrows", "liquidationCalls"
+  amount: string | undefined;
+  timestamp: string | undefined;
+  transactionHash: string | undefined;
+  feePayer: string | undefined;
   source: ResultSource;
   raw: Record<string, unknown>;
 }
@@ -69,22 +98,24 @@ export interface WalletData {
   transfers: TokenTransfer[];
   swaps: SwapActivity[];
   nftOwnerships: NftOwnership[];
+  lending: LendingActivity[];
 }
 
-type Category = 'balances' | 'transfers' | 'swaps' | 'nftOwnerships';
+type Category = 'balances' | 'transfers' | 'swaps' | 'nftOwnerships' | 'lending';
 
 const DEFAULT_LIMIT = 100;
-const DEFAULT_TOP_N = 3;
+const DEFAULT_PER_KEYWORD_LIMIT = 1;
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 // Search keywords match subgraph *display names* (see search_subgraphs_by_keyword_internal in
-// graphops/subgraph-mcp), so these are picked to hit common protocol/subgraph naming, not schema
-// field names.
+// graphops/subgraph-mcp). Named protocols surface far more relevant, wallet-scoped subgraphs
+// than generic terms like "token"/"swap" (which mostly matched unrelated/wrong-chain results).
 const DEFAULT_KEYWORDS: Record<Category, string[]> = {
   balances: ['token'],
-  transfers: ['token'],
-  swaps: ['swap'],
-  nftOwnerships: ['nft'],
+  transfers: ['erc20', 'token transfer', 'transfer'],
+  swaps: ['uniswap', 'sushiswap', 'curve', '1inch', 'swap'],
+  nftOwnerships: ['opensea', 'blur', 'nft'],
+  lending: ['aave', 'compound', 'lending'],
 };
 
 // Query-root collection field names (e.g. "transfers") are matched against these.
@@ -93,14 +124,18 @@ const CATEGORY_FIELD_KEYWORDS: Record<Category, string[]> = {
   transfers: ['transfer'],
   swaps: ['swap', 'trade'],
   nftOwnerships: ['ownership', 'nft', 'token'],
+  lending: ['deposit', 'borrow', 'repay', 'liquidat', 'withdraw', 'supply'],
 };
 
 const ADDRESS_FIELD_CANDIDATES: Record<Category, string[]> = {
   balances: ['owner', 'account', 'holder', 'user', 'address'],
   transfers: ['from', 'to', 'sender', 'receiver'],
   swaps: ['sender', 'recipient', 'origin', 'user', 'trader', 'account'],
-  nftOwnerships: ['owner', 'account', 'holder', 'to'],
+  nftOwnerships: ['owner', 'account', 'holder', 'to', 'seller', 'buyer'],
+  lending: ['user', 'account', 'borrower', 'depositor', 'onbehalfof', 'caller'],
 };
+
+const DEFAULT_SELECTION_DEPTH = 2;
 
 export function isValidWalletAddress(address: string): boolean {
   return ADDRESS_RE.test(address);
@@ -138,21 +173,23 @@ async function searchSubgraphs(keyword: string): Promise<ResultSource[]> {
   return sources;
 }
 
-/** Collects up to `topN` distinct candidate subgraphs across all of `keywords`, in ranked order. */
-async function findCandidateSources(keywords: string[], topN: number): Promise<ResultSource[]> {
+/** Searches every keyword individually and takes the top `perKeywordLimit` distinct subgraphs from each. */
+async function findCandidateSources(keywords: string[], perKeywordLimit: number): Promise<ResultSource[]> {
   const seen = new Set<string>();
   const candidates: ResultSource[] = [];
 
   const resultsPerKeyword = await Promise.all(keywords.map((kw) => searchSubgraphs(kw)));
   for (const results of resultsPerKeyword) {
+    let taken = 0;
     for (const source of results) {
-      if (candidates.length >= topN) break;
+      if (taken >= perKeywordLimit) break;
       if (seen.has(source.ipfsHash)) continue;
       seen.add(source.ipfsHash);
       candidates.push(source);
+      taken++;
     }
   }
-  return candidates.slice(0, topN);
+  return candidates;
 }
 
 // --- GraphQL execution + introspection ------------------------------------------------------
@@ -193,7 +230,7 @@ async function executeQuery(ipfsHash: string, query: string): Promise<Record<str
 const FIELD_INTROSPECTION = `
   name
   args { name }
-  type { kind name ofType { kind name ofType { kind name } } }
+  type { kind name ofType { kind name ofType { kind name ofType { kind name } } } }
 `;
 
 const queryFieldsCache = new Map<string, IntrospectionField[]>();
@@ -240,12 +277,36 @@ function pickCollectionField(
   return { field: scored[0].f, typeName: scored[0].unwrapped.name! };
 }
 
-function buildSelection(fields: IntrospectionField[], maxFields = 25): string {
+/**
+ * Selects every field the type exposes — leaf fields (scalars, enums, lists of either) as-is;
+ * *singular* entity/interface-typed fields are expanded recursively up to `depth` levels (via
+ * introspection of the referenced type, not guessed field names) so things like
+ * `transaction { blockNumber gasUsed from ... }` or `pool { token0 { symbol decimals } }` come
+ * back with real detail instead of just `{ id }`. Once `depth` is exhausted, remaining singular
+ * refs fall back to `{ id }`.
+ *
+ * List-typed entity relations (e.g. `pool.swaps`) are dropped entirely rather than expanded —
+ * nested in a selection they get no `first` bound, and expanding one (e.g. a pool's full swap
+ * history) is exactly what caused indexer timeouts when this was tried unbounded.
+ */
+async function buildSelection(ipfsHash: string, fields: IntrospectionField[], depth: number): Promise<string> {
   const parts: string[] = [];
-  for (const f of fields.slice(0, maxFields)) {
+  for (const f of fields) {
     const u = unwrapType(f.type);
-    if (u.isList) continue; // skip derived one-to-many fields
-    parts.push(u.kind === 'OBJECT' || u.kind === 'INTERFACE' ? `${f.name} { id }` : f.name);
+    const isRef = u.kind === 'OBJECT' || u.kind === 'INTERFACE';
+
+    if (isRef && u.isList) continue; // unbounded relation list — never safe to expand here
+    if (!isRef) {
+      parts.push(f.name);
+      continue;
+    }
+    if (depth <= 0 || !u.name) {
+      parts.push(`${f.name} { id }`);
+      continue;
+    }
+    const nestedFields = await getTypeFields(ipfsHash, u.name);
+    const nestedSelection = await buildSelection(ipfsHash, nestedFields, depth - 1);
+    parts.push(`${f.name} { ${nestedSelection} }`);
   }
   if (!parts.some((p) => p === 'id')) parts.unshift('id');
   return parts.join('\n      ');
@@ -260,14 +321,16 @@ interface CategoryRow {
   row: Record<string, unknown>;
   source: ResultSource;
   matchedAddressFields: string[];
+  queryField: string;
 }
 
 /**
- * Searches for subgraphs matching `category`'s keywords, and for each candidate (via
- * introspection, not schema guessing) resolves the real collection query field and queries it
- * for every matching wallet-address field, merging + de-duping across all candidate subgraphs.
- * Candidates whose schema doesn't fit the category are silently skipped, not fatal — coverage
- * is inherently best-effort since we're searching by keyword rather than a known contract.
+ * Searches for subgraphs matching `category`'s keywords (every keyword individually — not just
+ * the first one), and for each candidate (via introspection, not schema guessing) resolves the
+ * real collection query field and queries it for every matching wallet-address field, merging +
+ * de-duping across all candidate subgraphs. A candidate that doesn't fit the category, or whose
+ * query fails, is skipped rather than failing the whole category — coverage is inherently
+ * best-effort since we're searching by keyword rather than a known contract.
  */
 async function fetchCategory(
   category: Category,
@@ -275,36 +338,45 @@ async function fetchCategory(
   options: WalletQueryOptions,
 ): Promise<{ rows: CategoryRow[]; sourcesSearched: ResultSource[] }> {
   const keywords = options.keywords ?? DEFAULT_KEYWORDS[category];
-  const topN = options.topN ?? DEFAULT_TOP_N;
+  const perKeywordLimit = options.perKeywordLimit ?? DEFAULT_PER_KEYWORD_LIMIT;
   const limit = options.limit ?? DEFAULT_LIMIT;
+  const selectionDepth = options.selectionDepth ?? DEFAULT_SELECTION_DEPTH;
 
-  const candidates = await findCandidateSources(keywords, topN);
+  const candidates = await findCandidateSources(keywords, perKeywordLimit);
   const rowsById = new Map<string, CategoryRow>();
 
   for (const source of candidates) {
-    const queryFields = await getQueryFields(source.ipfsHash);
-    const picked = pickCollectionField(queryFields, category);
-    if (!picked) continue;
+    try {
+      const queryFields = await getQueryFields(source.ipfsHash);
+      const picked = pickCollectionField(queryFields, category);
+      if (!picked) continue;
 
-    const entityFields = await getTypeFields(source.ipfsHash, picked.typeName);
-    const matched = findAddressFields(entityFields, ADDRESS_FIELD_CANDIDATES[category]);
-    if (!matched.length) continue;
+      const entityFields = await getTypeFields(source.ipfsHash, picked.typeName);
+      const matched = findAddressFields(entityFields, ADDRESS_FIELD_CANDIDATES[category]);
+      if (!matched.length) continue;
 
-    const selection = buildSelection(entityFields);
+      const selection = await buildSelection(source.ipfsHash, entityFields, selectionDepth);
 
-    for (const candidateField of matched) {
-      const actualField = entityFields.find((f) => f.name.toLowerCase() === candidateField.toLowerCase())!.name;
-      const query = `{
-        ${picked.field.name}(first: ${limit}, where: { ${actualField}: "${wallet}" }) {
-          ${selection}
+      for (const candidateField of matched) {
+        const actualField = entityFields.find((f) => f.name.toLowerCase() === candidateField.toLowerCase())!.name;
+        const query = `{
+          ${picked.field.name}(first: ${limit}, where: { ${actualField}: "${wallet}" }) {
+            ${selection}
+          }
+        }`;
+        const data = await executeQuery(source.ipfsHash, query);
+        const rows: Array<Record<string, unknown>> = data[picked.field.name] ?? [];
+        for (const row of rows) {
+          const key = `${source.ipfsHash}:${row.id ?? JSON.stringify(row)}`;
+          rowsById.set(key, { row, source, matchedAddressFields: matched, queryField: picked.field.name });
         }
-      }`;
-      const data = await executeQuery(source.ipfsHash, query);
-      const rows: Array<Record<string, unknown>> = data[picked.field.name] ?? [];
-      for (const row of rows) {
-        const key = `${source.ipfsHash}:${row.id ?? JSON.stringify(row)}`;
-        rowsById.set(key, { row, source, matchedAddressFields: matched });
       }
+    } catch (err) {
+      console.warn(
+        `[dataRetrival] skipping "${source.displayName}" (${source.ipfsHash}) for category "${category}": ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
     }
   }
 
@@ -324,6 +396,17 @@ function firstDefined(row: Record<string, unknown>, keys: string[]): unknown {
     if (row[key] !== undefined) return row[key];
   }
   return undefined;
+}
+
+/**
+ * The wallet that initiated + paid gas for the transaction — read from the (now recursively
+ * expanded) nested `transaction`/`tx` block. This can differ from the entity's own from/sender
+ * field, e.g. when a router or another contract executes on the wallet's behalf.
+ */
+function feePayerFrom(row: Record<string, unknown>): string | undefined {
+  const tx = firstDefined(row, ['transaction', 'tx']);
+  if (!tx || typeof tx !== 'object') return undefined;
+  return extractRef(firstDefined(tx as Record<string, unknown>, ['from', 'sender', 'signer']));
 }
 
 // --- Public API -------------------------------------------------------------------------------
@@ -357,6 +440,7 @@ export async function getWalletTransfers(
     amount: firstDefined(row, ['amount', 'value']) as string | undefined,
     timestamp: firstDefined(row, ['timestamp', 'blockTimestamp']) as string | undefined,
     transactionHash: extractRef(firstDefined(row, ['transactionHash', 'transaction', 'txHash'])),
+    feePayer: feePayerFrom(row),
     source,
     raw: row,
   }));
@@ -373,10 +457,18 @@ export async function getWalletSwaps(
     id: String(row.id),
     wallet,
     matchedField: matchedAddressFields.find((f) => row[f] !== undefined) ?? matchedAddressFields[0],
-    amount0: firstDefined(row, ['amount0', 'amountIn']) as string | undefined,
-    amount1: firstDefined(row, ['amount1', 'amountOut']) as string | undefined,
+    amount0: firstDefined(row, ['amount0']) as string | undefined,
+    amount1: firstDefined(row, ['amount1']) as string | undefined,
+    amount0In: firstDefined(row, ['amount0In', 'amountIn']) as string | undefined,
+    amount0Out: firstDefined(row, ['amount0Out']) as string | undefined,
+    amount1In: firstDefined(row, ['amount1In']) as string | undefined,
+    amount1Out: firstDefined(row, ['amount1Out', 'amountOut']) as string | undefined,
+    sqrtPriceX96: firstDefined(row, ['sqrtPriceX96']) as string | undefined,
+    tick: firstDefined(row, ['tick']) as string | undefined,
+    logIndex: firstDefined(row, ['logIndex']) as string | undefined,
     timestamp: firstDefined(row, ['timestamp', 'blockTimestamp']) as string | undefined,
     transactionHash: extractRef(firstDefined(row, ['transactionHash', 'transaction', 'txHash'])),
+    feePayer: feePayerFrom(row),
     source,
     raw: row,
   }));
@@ -395,14 +487,39 @@ export async function getWalletNftOwnerships(
     tokenId: firstDefined(row, ['tokenId', 'identifier']) as string | undefined,
     from: extractRef(firstDefined(row, ['from', 'sender'])),
     to: extractRef(firstDefined(row, ['to', 'receiver'])),
+    seller: extractRef(firstDefined(row, ['seller'])),
+    buyer: extractRef(firstDefined(row, ['buyer'])),
+    priceUSD: firstDefined(row, ['priceUSD', 'priceETH', 'price']) as string | undefined,
     timestamp: firstDefined(row, ['timestamp', 'blockTimestamp']) as string | undefined,
     transactionHash: extractRef(firstDefined(row, ['transactionHash', 'transaction', 'txHash'])),
+    feePayer: feePayerFrom(row),
     source,
     raw: row,
   }));
 }
 
-/** Fetches all four categories in parallel for `walletAddress`, via keyword-discovered subgraphs. */
+/** GET lending → lending-protocol activity (deposits/borrows/repayments/liquidations/...) involving `walletAddress`. */
+export async function getWalletLending(
+  walletAddress: string,
+  options: WalletQueryOptions = {},
+): Promise<LendingActivity[]> {
+  const wallet = normalizeAddress(walletAddress);
+  const { rows } = await fetchCategory('lending', wallet, options);
+  return rows.map(({ row, source, matchedAddressFields, queryField }) => ({
+    id: String(row.id),
+    wallet,
+    matchedField: matchedAddressFields.find((f) => row[f] !== undefined) ?? matchedAddressFields[0],
+    action: queryField,
+    amount: firstDefined(row, ['amount', 'value', 'amountUSD']) as string | undefined,
+    timestamp: firstDefined(row, ['timestamp', 'blockTimestamp']) as string | undefined,
+    transactionHash: extractRef(firstDefined(row, ['transactionHash', 'transaction', 'txHash'])),
+    feePayer: feePayerFrom(row),
+    source,
+    raw: row,
+  }));
+}
+
+/** Fetches every category in parallel for `walletAddress`, via keyword-discovered subgraphs. */
 export async function getWalletData(
   walletAddress: string,
   chain: Chain,
@@ -410,12 +527,13 @@ export async function getWalletData(
 ): Promise<WalletData> {
   const wallet = normalizeAddress(walletAddress);
 
-  const [balances, transfers, swaps, nftOwnerships] = await Promise.all([
+  const [balances, transfers, swaps, nftOwnerships, lending] = await Promise.all([
     getWalletBalances(wallet, options),
     getWalletTransfers(wallet, options),
     getWalletSwaps(wallet, options),
     getWalletNftOwnerships(wallet, options),
+    getWalletLending(wallet, options),
   ]);
 
-  return { walletAddress: wallet, chain, balances, transfers, swaps, nftOwnerships };
+  return { walletAddress: wallet, chain, balances, transfers, swaps, nftOwnerships, lending };
 }

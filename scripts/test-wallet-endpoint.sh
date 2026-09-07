@@ -31,20 +31,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Checks for our specific error signature, not just "something responded" — a stray unrelated
+# server (e.g. a Next.js dev server) already bound to the port would otherwise false-positive.
 probe() {
-  curl -s -o /dev/null -w '%{http_code}' -X POST "$ENDPOINT" \
-    -H 'content-type: application/json' -d '{}' 2>/dev/null
+  curl -s -X POST "$ENDPOINT" -H 'content-type: application/json' -d '{}' 2>/dev/null \
+    | grep -q 'walletAddress must be a valid EVM address'
 }
 
-if [[ "$(probe)" == "000" ]]; then
-  echo "No server detected at $BASE_URL — starting one with 'npm run dev'..."
+if ! probe; then
+  echo "No ChainHound API detected at $BASE_URL — starting one with 'npm run dev'..."
   npm run dev >/tmp/chain-hound-dev.log 2>&1 &
   SERVER_PID=$!
   STARTED_SERVER=1
 
   ready=0
   for _ in $(seq 1 30); do
-    if [[ "$(probe)" != "000" ]]; then
+    if probe; then
       ready=1
       break
     fi
@@ -65,7 +67,7 @@ fail=0
 check() {
   local name="$1" expected_codes="$2" body="$3"
   local status
-  status=$(curl -s -o "$RESP_FILE" -w '%{http_code}' -X POST "$ENDPOINT" \
+  status=$(curl -s -o "$RESP_FILE" -w '%{http_code}' --max-time 120 -X POST "$ENDPOINT" \
     -H 'content-type: application/json' -d "$body")
 
   if [[ " $expected_codes " == *" $status "* ]]; then
