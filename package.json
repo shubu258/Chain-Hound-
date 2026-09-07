@@ -1,0 +1,35 @@
+{
+  "name": "chain-hound-",
+  "version": "1.0.0",
+  "description": "ChainHound is an AI-powered blockchain investigation and fund-tracing engine.",
+  "homepage": "https://github.com/shubu258/Chain-Hound-#readme",
+  "bugs": {
+    "url": "https://github.com/shubu258/Chain-Hound-/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shubu258/Chain-Hound-.git"
+  },
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev": "tsx watch src/server.ts",
+    "start": "node dist/server.js",
+    "test:wallet-endpoint": "bash scripts/test-wallet-endpoint.sh"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.4.1",
+    "typescript": "^7.0.2",
+    "tsx": "^4.23.13"
+  }
+}
