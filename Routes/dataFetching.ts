@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { getWalletData, isValidWalletAddress, type Chain } from '../src/subgraph/dataRetrival.js';
 import { getWalletTransfers as getTokenApiTransfers } from '../src/tokenApi/walletTransfers.js';
+import { analyseWalletRisk, type WalletAnalysisInput } from '../src/analyseData/analyseData.js';
 
 const router = Router();
 
@@ -46,7 +47,19 @@ router.post('/wallet', async (req: Request, res: Response) => {
           all: [],
         };
 
-  res.json({ ...subgraphResult.value, fundFlow });
+  const walletResponse: WalletAnalysisInput = { ...subgraphResult.value, fundFlow };
+
+  // Risk analysis runs on this route's own response (it's the sole input to the analyser) and is
+  // additive like fundFlow above: if the agent call fails, still return the underlying wallet data
+  // with the error surfaced inline instead of failing the whole request.
+  let riskAnalysis;
+  try {
+    riskAnalysis = await analyseWalletRisk(walletResponse);
+  } catch (err) {
+    riskAnalysis = { error: err instanceof Error ? err.message : 'Failed to generate risk analysis' };
+  }
+
+  res.json({ ...walletResponse, riskAnalysis });
 });
 
 export default router;

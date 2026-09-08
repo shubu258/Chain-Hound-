@@ -2,6 +2,7 @@ import express from 'express';
 import walletRouter from '../Routes/dataFetching.js';
 
 const app = express();
+app.set('json spaces', 2);
 app.use(express.json());
 app.use('/api', walletRouter);
 

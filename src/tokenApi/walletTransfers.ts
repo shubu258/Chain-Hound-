@@ -1,10 +1,10 @@
-// Wallet-level fund-flow, built on The Graph's Token API (see src/subgraphApi/tokenApi.ts).
+// Wallet-level fund-flow, built on The Graph's Token API (see src/tokenApi/client.ts).
 // This is the "complete, fast sent/received history for any wallet" source — the thing no
 // single subgraph can give you, since subgraphs are indexed per-contract, not per-wallet.
 // Keep this pipeline separate from src/subgraph/dataRetrival.ts (Subgraph MCP): that one stays
 // for protocol-level enrichment (swap mechanics, DeFi positions), this one for raw fund flow.
 
-import { getTransfersPage, type TokenApiTransfer } from '../subgraphApi/tokenApi.js';
+import { getTransfersPage, type TokenApiTransfer } from './client.js';
 
 export type TransferDirection = 'sent' | 'received';
 
