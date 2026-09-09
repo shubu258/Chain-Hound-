@@ -1,7 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { getWalletData, isValidWalletAddress, type Chain } from '../src/subgraph/dataRetrival.js';
-import { getWalletTransfers as getTokenApiTransfers } from '../src/tokenApi/walletTransfers.js';
-import { analyseWalletRisk, type WalletAnalysisInput } from '../src/analyseData/analyseData.js';
+import { isValidWalletAddress, type Chain } from '../src/subgraph/dataRetrival.js';
+import { analyzeWallet } from '../src/wallet/analyzeWallet.js';
 
 const router = Router();
 
@@ -9,7 +8,8 @@ const DEFAULT_CHAIN: Chain = process.env.DEFAULT_CHAIN ?? 'mainnet';
 
 /**
  * Single entry point for the "give me everything for this wallet" flow: takes just a wallet
- * address and combines two architecturally separate data sources, each clearly labeled:
+ * address and delegates to analyzeWallet (src/wallet/analyzeWallet.ts), which combines two
+ * architecturally separate data sources, each clearly labeled:
  *  - top-level balances/transfers/swaps/nftOwnerships/lending: Subgraph MCP (protocol-level
  *    enrichment — discovers relevant subgraphs by keyword, no pre-configured contracts needed)
  *  - "fundFlow": The Graph Token API (fast, wallet-indexed, cross-token sent/received history)
@@ -23,43 +23,12 @@ router.post('/wallet', async (req: Request, res: Response) => {
     return;
   }
 
-  const [subgraphResult, fundFlowResult] = await Promise.allSettled([
-    getWalletData(walletAddress, DEFAULT_CHAIN),
-    getTokenApiTransfers(walletAddress, DEFAULT_CHAIN),
-  ]);
-
-  if (subgraphResult.status === 'rejected') {
-    const err = subgraphResult.reason;
-    res.status(502).json({ error: err instanceof Error ? err.message : 'Failed to fetch wallet data' });
-    return;
-  }
-
-  // Token API is additive: if it fails (e.g. no TOKEN_API_ACCESS_TOKEN configured), still return
-  // the Subgraph MCP data rather than failing the whole request, with the error surfaced inline.
-  const fundFlow =
-    fundFlowResult.status === 'fulfilled'
-      ? { source: 'token-api' as const, ...fundFlowResult.value }
-      : {
-          source: 'token-api' as const,
-          error: fundFlowResult.reason instanceof Error ? fundFlowResult.reason.message : 'Failed to fetch fund flow',
-          sent: [],
-          received: [],
-          all: [],
-        };
-
-  const walletResponse: WalletAnalysisInput = { ...subgraphResult.value, fundFlow };
-
-  // Risk analysis runs on this route's own response (it's the sole input to the analyser) and is
-  // additive like fundFlow above: if the agent call fails, still return the underlying wallet data
-  // with the error surfaced inline instead of failing the whole request.
-  let riskAnalysis;
   try {
-    riskAnalysis = await analyseWalletRisk(walletResponse);
+    const walletResponse = await analyzeWallet(walletAddress, DEFAULT_CHAIN);
+    res.json(walletResponse);
   } catch (err) {
-    riskAnalysis = { error: err instanceof Error ? err.message : 'Failed to generate risk analysis' };
+    res.status(502).json({ error: err instanceof Error ? err.message : 'Failed to fetch wallet data' });
   }
-
-  res.json({ ...walletResponse, riskAnalysis });
 });
 
 export default router;
