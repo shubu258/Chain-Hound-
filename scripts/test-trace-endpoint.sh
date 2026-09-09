@@ -11,13 +11,13 @@
 #   BASE_URL        default: http://localhost:${PORT:-3000}
 #   WALLET_ADDRESS  well-formed address used for the "happy path" request
 #                   default: 0xFEEEEEE44046c3f61a8CC081E0918eF0de0a7ffC
-#   MAX_DEPTH       kept small so the smoke test stays fast — default: 2
+#   RECENT_TX_LIMIT how many of the wallet's most recent outgoing transfers to trace — default: 5
 
 set -uo pipefail
 
 BASE_URL="${BASE_URL:-http://localhost:${PORT:-3000}}"
 WALLET_ADDRESS="${WALLET_ADDRESS:-0xFEEEEEE44046c3f61a8CC081E0918eF0de0a7ffC}"
-MAX_DEPTH="${MAX_DEPTH:-2}"
+RECENT_TX_LIMIT="${RECENT_TX_LIMIT:-5}"
 ENDPOINT="$BASE_URL/api/trace"
 RESP_FILE="$(mktemp)"
 
@@ -90,7 +90,7 @@ check "missing walletAddress"   "400" '{}'
 check "malformed walletAddress" "400" '{"walletAddress":"not-an-address"}'
 
 # 200 = trace ran (possibly with per-hop errors inline), 502 = something outside a single hop broke
-trace_body="{\"walletAddress\":\"$WALLET_ADDRESS\",\"maxDepth\":$MAX_DEPTH}"
+trace_body="{\"walletAddress\":\"$WALLET_ADDRESS\",\"recentTxLimit\":$RECENT_TX_LIMIT}"
 status=$(curl -s -o "$RESP_FILE" -w '%{http_code}' --max-time 180 -X POST "$ENDPOINT" \
   -H 'content-type: application/json' -d "$trace_body")
 

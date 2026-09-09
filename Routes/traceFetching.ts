@@ -13,7 +13,7 @@ const DEFAULT_TRACE_CHAIN = 'ethereum';
  * traceEngine.ts for why the trace is always guaranteed to terminate.
  */
 router.post('/trace', async (req: Request, res: Response) => {
-  const { walletAddress, chain, maxDepth, minAmountUSD } = req.body ?? {};
+  const { walletAddress, chain, recentTxLimit } = req.body ?? {};
 
   if (typeof walletAddress !== 'string' || !isValidWalletAddress(walletAddress)) {
     res.status(400).json({ error: 'walletAddress must be a valid EVM address (0x + 40 hex chars)' });
@@ -22,8 +22,7 @@ router.post('/trace', async (req: Request, res: Response) => {
 
   try {
     const result = await traceFundFlow(walletAddress, typeof chain === 'string' ? chain : DEFAULT_TRACE_CHAIN, {
-      maxDepth: typeof maxDepth === 'number' ? maxDepth : undefined,
-      minAmountUSD: typeof minAmountUSD === 'number' ? minAmountUSD : undefined,
+      recentTxLimit: typeof recentTxLimit === 'number' ? recentTxLimit : undefined,
     });
     res.json(result);
   } catch (err) {
