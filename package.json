@@ -21,13 +21,15 @@
     "start": "node dist/server.js",
     "test:wallet-endpoint": "bash scripts/test-wallet-endpoint.sh",
     "test:fundflow": "bash scripts/test-token-api-fundflow.sh",
-    "test:trace-endpoint": "bash scripts/test-trace-endpoint.sh"
+    "test:trace-endpoint": "bash scripts/test-trace-endpoint.sh",
+    "setup:ens": "tsx scripts/bootstrap-ens-parent.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
-    "openai": "^7.10.0"
+    "openai": "^7.10.0",
+    "viem": "^2.31.6"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
