@@ -7,8 +7,10 @@
 // response object, not a wallet address.
 
 import { getOpenAiClient, DEFAULT_MODEL } from '../subgraph/openaiClient.js';
+import { withGeminiRetry } from '../subgraph/geminiRetry.js';
 import type { WalletData } from '../subgraph/dataRetrival.js';
 import type { WalletTransfersResult } from '../tokenApi/walletTransfers.js';
+import { noopProgress, type ProgressEmitter } from '../progress.js';
 
 export type RiskSeverity = 'High' | 'Medium' | 'Low';
 export type RiskCategory = 'Fund Flow' | 'Protocol Behavior' | 'Bridge Activity' | 'NFT Behavior' | 'Wallet Identity';
@@ -147,16 +149,29 @@ function parseRiskAnalysis(text: string): RiskAnalysis | undefined {
  * object Routes/dataFetching.ts's POST /api/wallet returns) and produces a structured risk score,
  * severity-tagged flags, positive signals, and data gaps.
  */
-export async function analyseWalletRisk(walletData: WalletAnalysisInput): Promise<RiskAnalysis> {
+export async function analyseWalletRisk(
+  walletData: WalletAnalysisInput,
+  onProgress: ProgressEmitter = noopProgress,
+): Promise<RiskAnalysis> {
   const openai = getOpenAiClient();
 
-  const completion = await openai.chat.completions.create({
-    model: DEFAULT_MODEL,
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: JSON.stringify(truncateLists(walletData)) },
-    ],
-  });
+  const completion = await withGeminiRetry(
+    () =>
+      openai.chat.completions.create({
+        model: DEFAULT_MODEL,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPT },
+          { role: 'user', content: JSON.stringify(truncateLists(walletData)) },
+        ],
+      }),
+    (waitMs) =>
+      onProgress({
+        step: 'risk',
+        label: 'Scoring risk',
+        status: 'start',
+        detail: `Rate limited — retrying in ${Math.round(waitMs / 1000)}s`,
+      }),
+  );
 
   const text = completion.choices[0]?.message?.content ?? '';
   const analysis = parseRiskAnalysis(text);

@@ -65,7 +65,7 @@ export async function analyzeWallet(
   onProgress({ step: 'risk', label: 'Scoring risk', status: 'start' });
   let riskAnalysis: RiskAnalysis | { error: string };
   try {
-    riskAnalysis = await analyseWalletRisk(walletResponse);
+    riskAnalysis = await analyseWalletRisk(walletResponse, onProgress);
     onProgress({ step: 'risk', label: 'Scoring risk', status: 'done' });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Failed to generate risk analysis';
