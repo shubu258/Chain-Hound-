@@ -329,6 +329,50 @@ p.lede {
   text-align: center;
 }
 
+.progress-list {
+  margin-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.progress-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 0.78rem;
+}
+.progress-icon {
+  width: 14px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.progress-icon.start {
+  color: var(--amber);
+  animation: progress-pulse 1s ease-in-out infinite;
+}
+.progress-icon.done {
+  color: var(--moss);
+}
+.progress-icon.error {
+  color: var(--rust);
+}
+.progress-label {
+  color: var(--ink-soft);
+}
+.progress-detail {
+  color: var(--rust);
+  font-size: 0.7rem;
+}
+@keyframes progress-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 .error-note {
   font-family: var(--font-jetbrains-mono), monospace;
   font-size: 0.78rem;
