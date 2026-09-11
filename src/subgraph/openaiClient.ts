@@ -15,7 +15,10 @@ import { getMcpClient } from './mcpClient.js';
 
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta/openai/';
 
-export const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.6-flash';
+// gemini-3.5-flash over the newer 3.6: free-tier request quota is tracked per model
+// (GenerateRequestsPerDayPerProjectPerModel-FreeTier), and 3.6-flash's free-tier daily cap is
+// far tighter (20/day) than 3.5-flash's, being the newer/preview model.
+export const DEFAULT_MODEL = process.env.GEMINI_MODEL ?? 'gemini-3.5-flash';
 
 let client: OpenAI | null = null;
 
