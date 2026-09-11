@@ -6,9 +6,13 @@
 
 import { RateLimitError } from 'openai';
 
-const MAX_RETRIES = 2;
+// 3, not 2: a per-minute limit's suggested retryDelay is only accurate for a single isolated
+// call. When several calls burst in quick succession (e.g. a multi-round tool-calling loop), the
+// rolling window can still contain earlier calls from that same burst by the time the first retry
+// fires — an extra attempt gives the window more real time to actually clear.
+const MAX_RETRIES = 3;
 const DEFAULT_WAIT_MS = 5000;
-const WAIT_BUFFER_MS = 2000;
+const WAIT_BUFFER_MS = 3000;
 
 interface GoogleErrorDetail {
   ['@type']?: string;

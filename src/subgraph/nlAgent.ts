@@ -19,14 +19,15 @@ export interface NlCategoryResult {
     raw?: string;
 }
 
-// One round is one Gemini call. Covering all 5 categories in a single conversation needs more
-// rounds than one category alone did, but far fewer than running 5 separate loops back to back
-// (previously up to 5 x 8 = 40 calls, then 5 x 2 = 10 after the first quota fix; this is at most 6
-// for the whole wallet, covering discovery + several category-specific queries + the final
-// answer). A wallet that genuinely needs more just reports "Exceeded max tool round-trips" —
-// handled as a per-category error below, not a failure of the whole request (see analyseData.ts's
-// dataGaps).
-const MAX_TOOL_ROUNDTRIPS = 6;
+// One round is one Gemini call. Covering all 5 categories in a single conversation genuinely
+// needs more rounds than one category alone did (discovery + several category-specific queries +
+// the final answer, across up to 5 different protocols) — 6 was cutting it off mid-investigation
+// in practice. Gemini's free-tier limiter tracks requests per minute, not (mainly) per day, so
+// more rounds costs burst headroom rather than daily quota; withGeminiRetry absorbs the resulting
+// 429s. A wallet that genuinely needs more than this just reports "Exceeded max tool round-trips"
+// — handled as a per-category error below, not a failure of the whole request (see
+// analyseData.ts's dataGaps).
+const MAX_TOOL_ROUNDTRIPS = 10;
 
 const SYSTEM_PROMPT = `You are a blockchain data agent. You have tools to discover and query The
 Graph subgraphs (search by keyword, introspect schema, execute GraphQL queries). Use them to
