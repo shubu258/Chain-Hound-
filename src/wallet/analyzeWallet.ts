@@ -11,6 +11,7 @@ import {
   type WalletFundFlow,
   type RiskAnalysis,
 } from '../analyseData/analyseData.js';
+import { noopProgress, type ProgressEmitter } from '../progress.js';
 
 export type { Chain };
 
@@ -26,9 +27,14 @@ export type WalletAnalysisResult = WalletData & {
  * failed Token API fetch or risk-analysis call is additive — its error is surfaced inline on the
  * returned object instead of aborting.
  */
-export async function analyzeWallet(walletAddress: string, chain: Chain): Promise<WalletAnalysisResult> {
+export async function analyzeWallet(
+  walletAddress: string,
+  chain: Chain,
+  onProgress: ProgressEmitter = noopProgress,
+): Promise<WalletAnalysisResult> {
+  onProgress({ step: 'fundflow', label: 'Fetching fund flow', status: 'start' });
   const [subgraphResult, fundFlowResult] = await Promise.allSettled([
-    getWalletData(walletAddress, chain),
+    getWalletData(walletAddress, chain, onProgress),
     getTokenApiTransfers(walletAddress, chain),
   ]);
 
@@ -47,14 +53,24 @@ export async function analyzeWallet(walletAddress: string, chain: Chain): Promis
           received: [],
           all: [],
         };
+  onProgress({
+    step: 'fundflow',
+    label: 'Fetching fund flow',
+    status: fundFlow.error ? 'error' : 'done',
+    detail: fundFlow.error,
+  });
 
   const walletResponse: WalletAnalysisInput = { ...subgraphResult.value, fundFlow };
 
+  onProgress({ step: 'risk', label: 'Scoring risk', status: 'start' });
   let riskAnalysis: RiskAnalysis | { error: string };
   try {
     riskAnalysis = await analyseWalletRisk(walletResponse);
+    onProgress({ step: 'risk', label: 'Scoring risk', status: 'done' });
   } catch (err) {
-    riskAnalysis = { error: err instanceof Error ? err.message : 'Failed to generate risk analysis' };
+    const message = err instanceof Error ? err.message : 'Failed to generate risk analysis';
+    riskAnalysis = { error: message };
+    onProgress({ step: 'risk', label: 'Scoring risk', status: 'error', detail: message });
   }
 
   return { ...walletResponse, riskAnalysis };
