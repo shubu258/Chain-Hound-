@@ -7,6 +7,8 @@ import type { ChatCompletionMessageParam } from 'openai/resources/chat/completio
 import { callSubgraphTool } from './mcpClient.js';
 import { getOpenAiClient, getMcpToolsAsOpenAiTools, DEFAULT_MODEL } from './openaiClient.js';
 import { fillTemplate, type NlCategory } from './nlPrompts.js';
+import { withGeminiRetry } from './geminiRetry.js';
+import { noopProgress, type ProgressEmitter } from '../progress.js';
 
 export interface NlCategoryResult {
     results?: unknown[];
@@ -45,10 +47,17 @@ function safeParseJson(text: string): { results?: unknown[]; sourcesUsed?: unkno
     }
 }
 
-export async function runNlCategory(category: NlCategory, chain: string, walletAddress: string): Promise<NlCategoryResult> {
+export async function runNlCategory(
+    category: NlCategory,
+    chain: string,
+    walletAddress: string,
+    onProgress: ProgressEmitter = noopProgress,
+): Promise<NlCategoryResult> {
     const openai = getOpenAiClient();
     const tools = await getMcpToolsAsOpenAiTools();
     const prompt = fillTemplate(category, chain, walletAddress);
+    const step = `subgraph:${category}`;
+    const label = `Checking ${category}`;
 
     const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -58,11 +67,16 @@ export async function runNlCategory(category: NlCategory, chain: string, walletA
     let lastText = '';
 
     for (let round = 0; round < MAX_TOOL_ROUNDTRIPS; round++) {
-        const completion = await openai.chat.completions.create({
-            model: DEFAULT_MODEL,
-            messages,
-            tools,
-        });
+        const completion = await withGeminiRetry(
+            () => openai.chat.completions.create({ model: DEFAULT_MODEL, messages, tools }),
+            (waitMs) =>
+                onProgress({
+                    step,
+                    label,
+                    status: 'start',
+                    detail: `Rate limited — retrying in ${Math.round(waitMs / 1000)}s`,
+                }),
+        );
 
         const choice = completion.choices[0];
         const message = choice?.message;

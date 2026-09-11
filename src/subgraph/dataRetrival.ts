@@ -50,7 +50,7 @@ export async function getWalletData(
         const step = `subgraph:${category}`;
         onProgress({ step, label: `Checking ${category}`, status: 'start' });
         try {
-            const result = await runNlCategory(category, chain, wallet);
+            const result = await runNlCategory(category, chain, wallet, onProgress);
             byCategory[category] = result;
             onProgress({ step, label: `Checking ${category}`, status: result.error ? 'error' : 'done', detail: result.error });
         } catch (err) {
