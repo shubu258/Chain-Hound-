@@ -16,7 +16,13 @@ export interface NlCategoryResult {
     raw?: string;
 }
 
-const MAX_TOOL_ROUNDTRIPS = 8;
+// Kept deliberately low: each round is one Gemini call, and this runs once per category (5
+// categories) per wallet search. At 8 this could burn up to 40 Gemini calls analyzing a single
+// wallet, easily exhausting a free-tier daily quota in one search. 2 rounds is the minimum that
+// still lets the model call a tool and then answer from its result; a category that genuinely
+// needs more just reports "Exceeded max tool round-trips" for that category (handled as a
+// per-category error, not a failure of the whole request — see analyseData.ts's dataGaps).
+const MAX_TOOL_ROUNDTRIPS = 2;
 
 const SYSTEM_PROMPT = `You are a blockchain data agent. You have tools to discover and query The
 Graph subgraphs (search by keyword, introspect schema, execute GraphQL queries). Use them to
