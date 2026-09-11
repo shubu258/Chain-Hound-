@@ -1,5 +1,6 @@
 import { runNlCategory, type NlCategoryResult } from './nlAgent.js';
 import type { NlCategory } from './nlPrompts.js';
+import { noopProgress, type ProgressEmitter } from '../progress.js';
 
 // Chain isn't enforced server-side beyond being substituted into the natural-language prompt —
 // it's up to the model (via the tools it's given) to interpret/filter by it.
@@ -32,24 +33,32 @@ const CATEGORIES: NlCategory[] = ['swaps', 'lending', 'nft', 'bridge', 'fullSwee
 
 /**
  * Runs all 5 NL_TEMPLATES categories (src/subgraph/nlPrompts.ts) for `walletAddress` through the
- * Gemini tool-calling agent (src/subgraph/nlAgent.ts), in parallel. One category's failure is
- * contained to that category's result rather than failing the whole call.
+ * Gemini tool-calling agent (src/subgraph/nlAgent.ts), one at a time (not in parallel) — each
+ * category is its own burst of Gemini calls, and running 5 at once multiplies the chance of
+ * tripping a per-minute rate limit on top of the daily quota. One category's failure is contained
+ * to that category's result rather than failing the whole call.
  */
-export async function getWalletData(walletAddress: string, chain: Chain): Promise<WalletData> {
+export async function getWalletData(
+    walletAddress: string,
+    chain: Chain,
+    onProgress: ProgressEmitter = noopProgress,
+): Promise<WalletData> {
     const wallet = normalizeAddress(walletAddress);
 
-    const settled = await Promise.allSettled(CATEGORIES.map((category) => runNlCategory(category, chain, wallet)));
-
-    const byCategory = Object.fromEntries(
-        CATEGORIES.map((category, i) => {
-            const outcome = settled[i];
-            const result: NlCategoryResult =
-                outcome.status === 'fulfilled'
-                    ? outcome.value
-                    : { error: outcome.reason instanceof Error ? outcome.reason.message : String(outcome.reason) };
-            return [category, result];
-        }),
-    ) as Record<NlCategory, NlCategoryResult>;
+    const byCategory = {} as Record<NlCategory, NlCategoryResult>;
+    for (const category of CATEGORIES) {
+        const step = `subgraph:${category}`;
+        onProgress({ step, label: `Checking ${category}`, status: 'start' });
+        try {
+            const result = await runNlCategory(category, chain, wallet);
+            byCategory[category] = result;
+            onProgress({ step, label: `Checking ${category}`, status: result.error ? 'error' : 'done', detail: result.error });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            byCategory[category] = { error: message };
+            onProgress({ step, label: `Checking ${category}`, status: 'error', detail: message });
+        }
+    }
 
     return { walletAddress: wallet, chain, ...byCategory };
 }
