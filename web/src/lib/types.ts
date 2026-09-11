@@ -91,6 +91,14 @@ export interface ApiError {
   error: string;
 }
 
+/** Mirrors src/progress.ts — one line of the /api/wallet NDJSON stream. */
+export interface ProgressEvent {
+  step: string;
+  label: string;
+  status: "start" | "done" | "error";
+  detail?: string;
+}
+
 export function hasRiskScore(risk: RiskAnalysis | { error: string }): risk is RiskAnalysis {
   return typeof (risk as RiskAnalysis).riskScore === "number";
 }
