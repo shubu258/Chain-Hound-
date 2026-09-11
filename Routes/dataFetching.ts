@@ -1,6 +1,8 @@
 import { Router, type Request, type Response } from 'express';
 import { isValidWalletAddress, type Chain } from '../src/subgraph/dataRetrival.js';
 import { analyzeWallet } from '../src/wallet/analyzeWallet.js';
+import { extractCounterparties } from '../src/ens/counterparties.js';
+import { registerWalletNetwork } from '../src/ens/ensRegistrar.js';
 
 const router = Router();
 
@@ -25,7 +27,16 @@ router.post('/wallet', async (req: Request, res: Response) => {
 
   try {
     const walletResponse = await analyzeWallet(walletAddress, DEFAULT_CHAIN);
-    res.json(walletResponse);
+
+    let ensNetwork: Awaited<ReturnType<typeof registerWalletNetwork>> | { error: string };
+    try {
+      const counterparties = extractCounterparties(walletAddress, walletResponse.fundFlow);
+      ensNetwork = await registerWalletNetwork(walletAddress, counterparties);
+    } catch (err) {
+      ensNetwork = { error: err instanceof Error ? err.message : 'Failed to register ENS wallet network' };
+    }
+
+    res.json({ ...walletResponse, ensNetwork });
   } catch (err) {
     res.status(502).json({ error: err instanceof Error ? err.message : 'Failed to fetch wallet data' });
   }
