@@ -17,6 +17,7 @@
 
 import { keccak256, namehash, toBytes, zeroAddress, type Address } from 'viem';
 
+import { noopProgress, type ProgressEmitter } from '../progress.js';
 import { getEnsPublicClient, getEnsWalletClient, getEnsSignerAddress } from './ensClient.js';
 import { permissionedRegistryAbi, permissionedRegistryBytecode } from './abi/permissionedRegistryAbi.js';
 import { permissionedResolverAbi } from './abi/permissionedResolverAbi.js';
@@ -221,6 +222,7 @@ export async function registerCounterpartyWallet(
 export async function registerWalletNetwork(
   rootWalletAddress: string,
   counterpartyAddresses: string[],
+  onProgress: ProgressEmitter = noopProgress,
 ): Promise<WalletNetworkResult> {
   const capped = counterpartyAddresses.slice(0, MAX_COUNTERPARTIES_PER_REQUEST);
   if (counterpartyAddresses.length > capped.length) {
@@ -229,14 +231,23 @@ export async function registerWalletNetwork(
     );
   }
 
+  onProgress({ step: 'ens:root', label: 'Registering root wallet ENS name', status: 'start' });
   const root = await registerRootWallet(rootWalletAddress);
+  onProgress({ step: 'ens:root', label: 'Registering root wallet ENS name', status: 'done', detail: root.ensName });
 
   const counterparties: NamedWallet[] = [];
-  for (const address of capped) {
+  for (const [i, address] of capped.entries()) {
+    const step = `ens:counterparty:${i + 1}/${capped.length}`;
+    const label = `Naming counterparty ${i + 1} of ${capped.length}`;
+    onProgress({ step, label, status: 'start' });
     try {
-      counterparties.push(await registerCounterpartyWallet(root.subregistryAddress, root.ensName, address));
+      const named = await registerCounterpartyWallet(root.subregistryAddress, root.ensName, address);
+      counterparties.push(named);
+      onProgress({ step, label, status: 'done', detail: named.ensName });
     } catch (err) {
-      console.warn(`[ensRegistrar] failed to register counterparty ${address}: ${err instanceof Error ? err.message : err}`);
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[ensRegistrar] failed to register counterparty ${address}: ${message}`);
+      onProgress({ step, label, status: 'error', detail: message });
     }
   }
 
