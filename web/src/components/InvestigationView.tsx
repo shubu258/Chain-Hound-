@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import { analyzeWallet, traceWallet } from "@/lib/api";
-import type { TraceFundFlowResponse, WalletAnalysisResponse } from "@/lib/types";
+import type { ProgressEvent, TraceFundFlowResponse, WalletAnalysisResponse } from "@/lib/types";
 import { ReportSection } from "./ReportSection";
 import { AccountsSection } from "./AccountsSection";
 import { TraceView } from "./TraceView";
+import { ProgressChecklist } from "./ProgressChecklist";
 
 type Mode = "wallet" | "trace";
 
@@ -18,6 +19,17 @@ export function InvestigationView() {
   const [error, setError] = useState<string | null>(null);
   const [walletResult, setWalletResult] = useState<WalletAnalysisResponse | null>(null);
   const [traceResult, setTraceResult] = useState<TraceFundFlowResponse | null>(null);
+  const [steps, setSteps] = useState<ProgressEvent[]>([]);
+
+  function recordStep(event: ProgressEvent) {
+    setSteps((prev) => {
+      const i = prev.findIndex((s) => s.step === event.step);
+      if (i === -1) return [...prev, event];
+      const next = [...prev];
+      next[i] = event;
+      return next;
+    });
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -31,9 +43,10 @@ export function InvestigationView() {
     setLoading(true);
     setWalletResult(null);
     setTraceResult(null);
+    setSteps([]);
     try {
       if (mode === "wallet") {
-        setWalletResult(await analyzeWallet(walletAddress.trim()));
+        setWalletResult(await analyzeWallet(walletAddress.trim(), recordStep));
       } else {
         setTraceResult(await traceWallet(walletAddress.trim()));
       }
@@ -96,6 +109,7 @@ export function InvestigationView() {
                 {loading ? "Investigating…" : "Investigate →"}
               </button>
               <p className="hint">Every wallet found is named onchain via ENSv2</p>
+              {mode === "wallet" && <ProgressChecklist steps={steps} />}
               {error && <div className="error-note">{error}</div>}
             </form>
           </div>
