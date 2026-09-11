@@ -1,5 +1,4 @@
-import { runNlCategory, type NlCategoryResult } from './nlAgent.js';
-import type { NlCategory } from './nlPrompts.js';
+import { runCombinedCategories, type NlCategoryResult } from './nlAgent.js';
 import { noopProgress, type ProgressEmitter } from '../progress.js';
 
 // Chain isn't enforced server-side beyond being substituted into the natural-language prompt —
@@ -29,14 +28,10 @@ function normalizeAddress(address: string): string {
     return address.toLowerCase();
 }
 
-const CATEGORIES: NlCategory[] = ['swaps', 'lending', 'nft', 'bridge', 'fullSweep'];
-
 /**
- * Runs all 5 NL_TEMPLATES categories (src/subgraph/nlPrompts.ts) for `walletAddress` through the
- * Gemini tool-calling agent (src/subgraph/nlAgent.ts), one at a time (not in parallel) — each
- * category is its own burst of Gemini calls, and running 5 at once multiplies the chance of
- * tripping a per-minute rate limit on top of the daily quota. One category's failure is contained
- * to that category's result rather than failing the whole call.
+ * Runs the combined 5-category Gemini tool-calling session (src/subgraph/nlAgent.ts) for
+ * `walletAddress` — one Gemini conversation instead of 5 separate ones, to stay well under
+ * free-tier quota limits. See nlPrompts.ts for the full rationale.
  */
 export async function getWalletData(
     walletAddress: string,
@@ -44,21 +39,6 @@ export async function getWalletData(
     onProgress: ProgressEmitter = noopProgress,
 ): Promise<WalletData> {
     const wallet = normalizeAddress(walletAddress);
-
-    const byCategory = {} as Record<NlCategory, NlCategoryResult>;
-    for (const category of CATEGORIES) {
-        const step = `subgraph:${category}`;
-        onProgress({ step, label: `Checking ${category}`, status: 'start' });
-        try {
-            const result = await runNlCategory(category, chain, wallet, onProgress);
-            byCategory[category] = result;
-            onProgress({ step, label: `Checking ${category}`, status: result.error ? 'error' : 'done', detail: result.error });
-        } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            byCategory[category] = { error: message };
-            onProgress({ step, label: `Checking ${category}`, status: 'error', detail: message });
-        }
-    }
-
+    const byCategory = await runCombinedCategories(chain, wallet, onProgress);
     return { walletAddress: wallet, chain, ...byCategory };
 }
