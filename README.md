@@ -9,6 +9,20 @@ curl -X POST localhost:3000/api/wallet \
   -H 'content-type: application/json' \
   -d '{"walletAddress":"0xYourWalletHere"}'
 
+## Frontend
+
+The API runs on **port 3000** by default; the Next.js frontend (`web/`) runs on **port 3001** by
+default specifically so the two never collide. Run both, in separate terminals:
+
+```
+npm run dev              # API — repo root, port 3000
+cd web && npm run dev    # frontend — port 3001
+```
+
+Then open http://localhost:3001. The frontend proxies its `/api/*` calls to the API (see
+`web/next.config.ts`) — if you run the API on a different port, set `CHAINHOUND_API_URL` before
+starting the frontend, e.g. `CHAINHOUND_API_URL=http://localhost:4100 npm run dev`.
+
 ## ENS wallet naming (ENSv2, Sepolia)
 
 ChainHound doesn't just name the searched wallet — it names every wallet in its immediate
