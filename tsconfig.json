@@ -14,5 +14,5 @@
     "declaration": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "Routes"]
+  "include": ["src", "Routes", "scripts"]
 }
