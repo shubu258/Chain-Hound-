@@ -1,13 +1,14 @@
-// Runs one of the NL_TEMPLATES (src/subgraph/nlPrompts.ts) through an OpenAI tool-calling loop
-// against the Subgraph MCP server's live tools, replacing the old hardcoded keyword/introspection
-// pipeline that used to live in dataRetrival.ts. The model decides which MCP tools to call (which
-// keyword to search, which subgraph/ipfs_hash to query, what GraphQL to run) instead of us.
+// Runs ONE combined instruction (src/subgraph/nlPrompts.ts) through an OpenAI tool-calling loop
+// against the Subgraph MCP server's live tools — covering all 5 wallet-investigation categories
+// in a single Gemini conversation instead of 5 separate ones (see nlPrompts.ts for why). The model
+// decides which MCP tools to call (which keyword to search, which subgraph/ipfs_hash to query,
+// what GraphQL to run) instead of us.
 
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
 import { callSubgraphTool } from './mcpClient.js';
 import { getOpenAiClient, getMcpToolsAsOpenAiTools, DEFAULT_MODEL } from './openaiClient.js';
-import { fillTemplate, type NlCategory } from './nlPrompts.js';
 import { withGeminiRetry } from './geminiRetry.js';
+import { fillCombinedTemplate, NL_CATEGORIES, type NlCategory } from './nlPrompts.js';
 import { noopProgress, type ProgressEmitter } from '../progress.js';
 
 export interface NlCategoryResult {
@@ -18,46 +19,91 @@ export interface NlCategoryResult {
     raw?: string;
 }
 
-// Kept deliberately low: each round is one Gemini call, and this runs once per category (5
-// categories) per wallet search. At 8 this could burn up to 40 Gemini calls analyzing a single
-// wallet, easily exhausting a free-tier daily quota in one search. 2 rounds is the minimum that
-// still lets the model call a tool and then answer from its result; a category that genuinely
-// needs more just reports "Exceeded max tool round-trips" for that category (handled as a
-// per-category error, not a failure of the whole request — see analyseData.ts's dataGaps).
-const MAX_TOOL_ROUNDTRIPS = 2;
+// One round is one Gemini call. Covering all 5 categories in a single conversation needs more
+// rounds than one category alone did, but far fewer than running 5 separate loops back to back
+// (previously up to 5 x 8 = 40 calls, then 5 x 2 = 10 after the first quota fix; this is at most 6
+// for the whole wallet, covering discovery + several category-specific queries + the final
+// answer). A wallet that genuinely needs more just reports "Exceeded max tool round-trips" —
+// handled as a per-category error below, not a failure of the whole request (see analyseData.ts's
+// dataGaps).
+const MAX_TOOL_ROUNDTRIPS = 6;
 
 const SYSTEM_PROMPT = `You are a blockchain data agent. You have tools to discover and query The
 Graph subgraphs (search by keyword, introspect schema, execute GraphQL queries). Use them to
 fulfil the user's instruction as precisely as possible: find the relevant subgraph(s), inspect
-their schema if needed, and query for the wallet's data.
+their schema if needed, and query for the wallet's data across every category asked for.`;
 
-When you are done, respond with ONLY a single JSON object (no prose, no markdown fences) of the
-shape:
-{
-  "results": [ ...one object per matching event/record, with exactly the fields the instruction asked for... ],
-  "sourcesUsed": [ { "subgraphId": "...", "displayName": "..." } ]
+function allError(message: string, raw?: string): Record<NlCategory, NlCategoryResult> {
+    const entry: NlCategoryResult = raw !== undefined ? { error: message, raw, truncated: true } : { error: message };
+    return Object.fromEntries(NL_CATEGORIES.map((category) => [category, entry])) as Record<NlCategory, NlCategoryResult>;
 }
-If you find nothing, return "results": [].`;
 
-function safeParseJson(text: string): { results?: unknown[]; sourcesUsed?: unknown[] } | undefined {
+function parseCombinedResult(text: string): Record<NlCategory, NlCategoryResult> | undefined {
+    let parsed: unknown;
     try {
-        return JSON.parse(text);
+        parsed = JSON.parse(text);
     } catch {
         return undefined;
     }
+    if (!parsed || typeof parsed !== 'object') return undefined;
+
+    const obj = parsed as Record<string, unknown>;
+    const result = {} as Record<NlCategory, NlCategoryResult>;
+    for (const category of NL_CATEGORIES) {
+        const entry = obj[category];
+        if (entry && typeof entry === 'object') {
+            const e = entry as Record<string, unknown>;
+            result[category] = {
+                results: Array.isArray(e.results) ? e.results : [],
+                sourcesUsed: Array.isArray(e.sourcesUsed) ? (e.sourcesUsed as NlCategoryResult['sourcesUsed']) : [],
+            };
+        } else {
+            result[category] = { error: `Model response was missing the "${category}" key` };
+        }
+    }
+    return result;
 }
 
-export async function runNlCategory(
-    category: NlCategory,
+/**
+ * Runs the combined 5-category instruction for `walletAddress` through a single Gemini
+ * tool-calling loop, returning a per-category result keyed the same way the old 5-separate-calls
+ * version did (so dataRetrival.ts doesn't need to know the difference).
+ */
+export async function runCombinedCategories(
     chain: string,
     walletAddress: string,
     onProgress: ProgressEmitter = noopProgress,
-): Promise<NlCategoryResult> {
+): Promise<Record<NlCategory, NlCategoryResult>> {
+    const step = 'subgraph';
+    const label = 'Checking wallet activity (swaps, lending, nft, bridge, fullSweep)';
+
+    // Everything here — including a 429 that survives withGeminiRetry's retries — is caught and
+    // turned into a per-category error result rather than thrown. This is now ONE shared
+    // conversation for all 5 categories (see nlPrompts.ts), so a failure partway through
+    // legitimately means all 5 categories are unanswered — but it must NOT take down fundFlow,
+    // risk analysis, or ENS naming too, the way an unhandled rejection out of getWalletData would
+    // (analyzeWallet.ts throws whole-request on a rejected Subgraph MCP fetch).
+    try {
+        return await runConversation(chain, walletAddress, step, label, onProgress);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        onProgress({ step, label, status: 'error', detail: message });
+        return allError(message);
+    }
+}
+
+async function runConversation(
+    chain: string,
+    walletAddress: string,
+    step: string,
+    label: string,
+    onProgress: ProgressEmitter,
+): Promise<Record<NlCategory, NlCategoryResult>> {
     const openai = getOpenAiClient();
     const tools = await getMcpToolsAsOpenAiTools();
-    const prompt = fillTemplate(category, chain, walletAddress);
-    const step = `subgraph:${category}`;
-    const label = `Checking ${category}`;
+    const prompt = fillCombinedTemplate(chain, walletAddress);
+
+    onProgress({ step, label, status: 'start' });
 
     const messages: ChatCompletionMessageParam[] = [
         { role: 'system', content: SYSTEM_PROMPT },
@@ -85,14 +131,13 @@ export async function runNlCategory(
         lastText = message.content ?? lastText;
 
         if (!message.tool_calls?.length) {
-            const parsed = safeParseJson(message.content ?? '');
+            const parsed = parseCombinedResult(message.content ?? '');
             if (parsed) {
-                return {
-                    results: Array.isArray(parsed.results) ? parsed.results : [],
-                    sourcesUsed: Array.isArray(parsed.sourcesUsed) ? (parsed.sourcesUsed as NlCategoryResult['sourcesUsed']) : [],
-                };
+                onProgress({ step, label, status: 'done' });
+                return parsed;
             }
-            return { error: 'Model did not return valid JSON', raw: message.content ?? '' };
+            onProgress({ step, label, status: 'error', detail: 'Model did not return valid JSON' });
+            return allError('Model did not return valid JSON', message.content ?? '');
         }
 
         messages.push({ role: 'assistant', content: message.content, tool_calls: message.tool_calls });
@@ -111,5 +156,6 @@ export async function runNlCategory(
         }
     }
 
-    return { error: 'Exceeded max tool round-trips', raw: lastText, truncated: true };
+    onProgress({ step, label, status: 'error', detail: 'Exceeded max tool round-trips' });
+    return allError('Exceeded max tool round-trips', lastText);
 }
