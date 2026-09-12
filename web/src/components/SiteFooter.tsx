@@ -23,6 +23,8 @@ export function SiteFooter() {
           <div className="footer-col">
             <h5>DEVELOPERS</h5>
             <a href="https://github.com/shubu258/Chain-Hound-">Repository</a>
+            <a href="/docs">Agent API docs</a>
+            <a href="/openapi/chainhound.json">OpenAPI spec</a>
           </div>
           <div className="footer-col">
             <h5>COMPANY</h5>
