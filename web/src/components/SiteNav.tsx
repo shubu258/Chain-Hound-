@@ -15,8 +15,7 @@ export function SiteNav() {
           <a href="#investigate" className="active">
             Investigate
           </a>
-          <a href="#report">Report</a>
-          <a href="#accounts">Named accounts</a>
+          <a href="#live-status">Live workflow</a>
           <a href="#pipeline">How it works</a>
         </nav>
       </div>

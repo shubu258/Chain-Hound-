@@ -1,41 +1,31 @@
 import type { ApiError, ProgressEvent, TraceFundFlowResponse, WalletAnalysisResponse } from "./types";
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+type StreamLine<T> =
+  | ({ type: "progress" } & ProgressEvent)
+  | { type: "result"; data: T }
+  | { type: "fatal"; error: string };
+
+/**
+ * Both POST /api/wallet and POST /api/trace stream newline-delimited JSON (see
+ * Routes/dataFetching.ts and Routes/traceFetching.ts) instead of one blocking response, since
+ * either pipeline can take a while — each step is reported to `onProgress` as it happens, and the
+ * final result resolves the returned promise. Line shapes: {"type":"progress",...ProgressEvent},
+ * {"type":"result","data":T}, or {"type":"fatal","error":string}.
+ */
+async function streamNdjson<T>(
+  path: string,
+  body: unknown,
+  onProgress?: (event: ProgressEvent) => void,
+): Promise<T> {
   const res = await fetch(path, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
-  const json = (await res.json()) as T | ApiError;
-  if (!res.ok) {
-    throw new Error((json as ApiError).error ?? `Request to ${path} failed (${res.status})`);
-  }
-  return json as T;
-}
-
-type WalletStreamLine =
-  | ({ type: "progress" } & ProgressEvent)
-  | { type: "result"; data: WalletAnalysisResponse }
-  | { type: "fatal"; error: string };
-
-/**
- * POST /api/wallet streams newline-delimited JSON (see Routes/dataFetching.ts) instead of one
- * blocking response, since the full pipeline can take a while — each step is reported to
- * `onProgress` as it happens, and the final result resolves the returned promise.
- */
-export async function analyzeWallet(
-  walletAddress: string,
-  onProgress?: (event: ProgressEvent) => void,
-): Promise<WalletAnalysisResponse> {
-  const res = await fetch("/api/wallet", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ walletAddress }),
-  });
 
   if (!res.ok) {
     const json = (await res.json().catch(() => null)) as ApiError | null;
-    throw new Error(json?.error ?? `Request to /api/wallet failed (${res.status})`);
+    throw new Error(json?.error ?? `Request to ${path} failed (${res.status})`);
   }
   if (!res.body) {
     throw new Error("This browser does not support streaming responses");
@@ -44,7 +34,7 @@ export async function analyzeWallet(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
-  let result: WalletAnalysisResponse | null = null;
+  let result: T | null = null;
 
   try {
     while (true) {
@@ -58,7 +48,7 @@ export async function analyzeWallet(
         buffer = buffer.slice(newlineIndex + 1);
         if (!line) continue;
 
-        const parsed = JSON.parse(line) as WalletStreamLine;
+        const parsed = JSON.parse(line) as StreamLine<T>;
         if (parsed.type === "progress") {
           onProgress?.(parsed);
         } else if (parsed.type === "result") {
@@ -78,6 +68,16 @@ export async function analyzeWallet(
   return result;
 }
 
-export function traceWallet(walletAddress: string): Promise<TraceFundFlowResponse> {
-  return postJson<TraceFundFlowResponse>("/api/trace", { walletAddress });
+export function analyzeWallet(
+  walletAddress: string,
+  onProgress?: (event: ProgressEvent) => void,
+): Promise<WalletAnalysisResponse> {
+  return streamNdjson<WalletAnalysisResponse>("/api/wallet", { walletAddress }, onProgress);
+}
+
+export function traceWallet(
+  walletAddress: string,
+  onProgress?: (event: ProgressEvent) => void,
+): Promise<TraceFundFlowResponse> {
+  return streamNdjson<TraceFundFlowResponse>("/api/trace", { walletAddress }, onProgress);
 }

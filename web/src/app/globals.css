@@ -219,6 +219,11 @@ p.lede {
   padding: 30px;
   position: relative;
   box-shadow: 0 1px 0 rgba(28, 42, 30, 0.03);
+  /* This is a CSS Grid item (.hero-grid); without min-width:0 its auto min-width falls back to
+     the min-content size of whatever it contains, so one long unbreakable line deep inside (e.g.
+     a raw error string in the live console) can force this whole grid track — and the page — to
+     stretch to fit it. */
+  min-width: 0;
 }
 .investigate-card::before {
   content: "";
@@ -329,39 +334,129 @@ p.lede {
   text-align: center;
 }
 
-.progress-list {
-  margin-top: 16px;
+/* ===== LIVE STATUS SECTION ===== */
+section.live-status-section {
+  padding: 56px 0;
+  border-bottom: 1px solid var(--cream-line);
+}
+.live-console {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--paper);
+  border-radius: var(--radius);
+  overflow: hidden;
+  border: 1px solid var(--paper-line);
+}
+.live-console .box-header {
   display: flex;
-  flex-direction: column;
+  align-items: center;
   gap: 8px;
+  padding: 10px 14px;
+  background: var(--cream);
+  border-bottom: 1px solid var(--paper-line);
 }
-.progress-item {
+/* Overrides the shared `.box-header span.filename` rule (light-on-dark, meant for the dark
+   summary.diff panel elsewhere on the page) — needs equal specificity plus source order, since
+   that base rule also matches this header. */
+.live-console .box-header span.filename {
+  color: var(--ink-soft);
+}
+.live-badge {
+  margin-left: auto;
   display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 0.78rem;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #9c9576;
 }
-.progress-icon {
-  width: 14px;
-  flex-shrink: 0;
+.live-badge.live {
+  color: var(--moss-deep);
+}
+.live-badge .live-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.live-badge.live .live-dot {
+  animation: progress-pulse 1s ease-in-out infinite;
+}
+.live-console-body {
+  padding: 10px 0;
+  max-height: 220px;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  font-size: 0.72rem;
+  line-height: 1.85;
+  /* Slim, unobtrusive scrollbar instead of the browser's default wide track + arrow buttons. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--paper-line) transparent;
+}
+.live-console-body::-webkit-scrollbar {
+  width: 5px;
+}
+.live-console-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+.live-console-body::-webkit-scrollbar-thumb {
+  background: var(--paper-line);
+  border-radius: 3px;
+}
+.live-line {
+  padding: 1px 14px;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  min-width: 0;
+}
+.live-line .ts {
+  color: #b8b090;
+  flex: 0 0 auto;
+  width: 38px;
+}
+.live-line .glyph {
+  width: 11px;
+  flex: 0 0 auto;
   text-align: center;
 }
-.progress-icon.start {
+.live-line .label {
+  color: var(--ink-soft);
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-line .detail {
+  color: #9c9576;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.live-line.start .glyph {
   color: var(--amber);
   animation: progress-pulse 1s ease-in-out infinite;
 }
-.progress-icon.done {
+.live-line.done .glyph {
   color: var(--moss);
 }
-.progress-icon.error {
+.live-line.error .glyph,
+.live-line.error .label {
   color: var(--rust);
 }
-.progress-label {
-  color: var(--ink-soft);
+.live-line.meta .glyph,
+.live-line.meta .label {
+  color: #9c9576;
 }
-.progress-detail {
-  color: var(--rust);
-  font-size: 0.7rem;
+.live-line .caret {
+  color: var(--moss);
+  animation: caret-blink 1s step-end infinite;
 }
 @keyframes progress-pulse {
   0%,
@@ -370,6 +465,16 @@ p.lede {
   }
   50% {
     opacity: 0.35;
+  }
+}
+@keyframes caret-blink {
+  0%,
+  50% {
+    opacity: 1;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
   }
 }
 
@@ -689,6 +794,75 @@ section.accounts {
   color: var(--ink-soft);
 }
 
+/* Named accounts section (ENS list) uses a simpler 3-column row: index, label, status. */
+.accounts .account-row {
+  grid-template-columns: 32px 1fr auto;
+  cursor: default;
+}
+.acc-index {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  text-align: center;
+}
+.account-row.root .acc-index {
+  font-size: 0.9rem;
+  color: var(--forest-deep);
+}
+.acc-label-wrap {
+  position: relative;
+  display: inline-flex;
+  min-width: 0;
+  cursor: help;
+}
+.acc-label {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-weight: 600;
+  font-size: 0.92rem;
+  color: var(--forest-deep);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acc-tooltip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  max-width: min(340px, 80vw);
+  padding: 7px 11px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 0.68rem;
+  line-height: 1.4;
+  border-radius: 3px;
+  white-space: normal;
+  word-break: break-all;
+  box-shadow: 0 6px 16px rgba(20, 39, 32, 0.25);
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 20;
+  pointer-events: none;
+}
+.acc-label-wrap:hover .acc-tooltip,
+.acc-label-wrap:focus-visible .acc-tooltip {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+.acc-status {
+  font-family: var(--font-jetbrains-mono), monospace;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--moss-deep);
+  background: rgba(94, 123, 76, 0.14);
+  padding: 5px 11px;
+  border-radius: 2px;
+  white-space: nowrap;
+}
+
 .empty-note {
   font-family: var(--font-jetbrains-mono), monospace;
   font-size: 0.82rem;
@@ -706,53 +880,160 @@ section.accounts {
   .acc-risk {
     grid-column: 2;
   }
+  .accounts .account-row {
+    grid-template-columns: 20px 1fr;
+  }
+  .acc-status {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 
 /* ===== HOW IT WORKS strip ===== */
 section.pipeline {
   padding: 80px 0;
 }
-.pipeline-steps {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 1px;
+.pipeline-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  color: var(--ink-soft);
+}
+.live-line-legend {
+  display: inline-block;
+  width: 12px;
+  text-align: center;
+}
+.live-line-legend.start {
+  color: var(--amber);
+}
+.live-line-legend.done {
+  color: #5e7b4c;
+}
+.live-line-legend.error {
+  color: var(--rust);
+}
+.pipeline-intro {
+  font-size: 0.82rem;
+  color: var(--ink-soft);
+  line-height: 1.6;
+  max-width: 70ch;
+  margin: -16px 0 28px;
+}
+/* Vertical timeline: a center line running the height of the section, a numbered node per stage
+   sitting on that line, and each stage's card offset to alternating sides of it. */
+.pipeline-path {
+  position: relative;
+}
+.pipeline-path::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
   background: var(--paper-line);
+  transform: translateX(-50%);
+}
+.path-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 56px 1fr;
+  align-items: start;
+  padding: 22px 0;
+}
+.path-step:first-child {
+  padding-top: 0;
+}
+.path-step:last-child {
+  padding-bottom: 0;
+}
+.path-node {
+  grid-column: 2;
+  justify-self: center;
+  margin-top: 4px;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  background: var(--cream);
+  border: 2px solid var(--orange);
+  color: var(--forest-deep);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  z-index: 1;
+}
+.path-card {
+  background: var(--paper);
   border: 1px solid var(--paper-line);
   border-radius: var(--radius);
-  overflow: hidden;
+  padding: 22px 24px;
+  display: flex;
+  flex-direction: column;
 }
-.pipeline-step {
-  background: var(--paper);
-  padding: 26px 22px;
+.path-step:nth-child(odd) .path-card {
+  grid-column: 1;
 }
-.pipeline-step .idx {
-  font-family: var(--font-jetbrains-mono), monospace;
-  font-size: 0.7rem;
-  color: var(--orange);
-  margin-bottom: 10px;
+.path-step:nth-child(even) .path-card {
+  grid-column: 3;
 }
-.pipeline-step h4 {
+.path-card h4 {
   font-family: var(--font-fraunces), serif;
   font-size: 1.08rem;
   font-weight: 600;
   margin: 0 0 8px;
   color: var(--forest-deep);
 }
-.pipeline-step p {
+.path-card p {
   font-family: var(--font-jetbrains-mono), monospace;
   font-size: 0.76rem;
   color: var(--ink-soft);
   line-height: 1.6;
-  margin: 0;
+  margin: 0 0 16px;
 }
-@media (max-width: 900px) {
-  .pipeline-steps {
-    grid-template-columns: 1fr 1fr;
+.pipeline-tech {
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--moss-deep);
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px dashed var(--paper-line);
+}
+.pipeline-keys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.pipeline-key {
+  font-size: 0.62rem;
+  color: var(--ink-soft);
+  background: var(--cream);
+  border: 1px solid var(--paper-line);
+  border-radius: 2px;
+  padding: 3px 7px;
+}
+@media (max-width: 760px) {
+  .pipeline-path::before {
+    left: 20px;
+    transform: none;
   }
-}
-@media (max-width: 560px) {
-  .pipeline-steps {
-    grid-template-columns: 1fr;
+  .path-step {
+    grid-template-columns: 40px 1fr;
+    gap: 16px;
+  }
+  .path-node {
+    grid-column: 1;
+    width: 40px;
+    height: 40px;
+  }
+  .path-step:nth-child(odd) .path-card,
+  .path-step:nth-child(even) .path-card {
+    grid-column: 2;
   }
 }
 

@@ -1,12 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { analyzeWallet, traceWallet } from "@/lib/api";
 import type { ProgressEvent, TraceFundFlowResponse, WalletAnalysisResponse } from "@/lib/types";
 import { ReportSection } from "./ReportSection";
 import { AccountsSection } from "./AccountsSection";
 import { TraceView } from "./TraceView";
-import { ProgressChecklist } from "./ProgressChecklist";
+import { LiveStatus, type LiveStatusLine } from "./LiveStatus";
 
 type Mode = "wallet" | "trace";
 
@@ -19,14 +19,16 @@ export function InvestigationView() {
   const [error, setError] = useState<string | null>(null);
   const [walletResult, setWalletResult] = useState<WalletAnalysisResponse | null>(null);
   const [traceResult, setTraceResult] = useState<TraceFundFlowResponse | null>(null);
-  const [steps, setSteps] = useState<ProgressEvent[]>([]);
+  const [lines, setLines] = useState<LiveStatusLine[]>([]);
+  const startedAtRef = useRef(0);
 
   function recordStep(event: ProgressEvent) {
-    setSteps((prev) => {
+    const elapsedMs = Date.now() - startedAtRef.current;
+    setLines((prev) => {
       const i = prev.findIndex((s) => s.step === event.step);
-      if (i === -1) return [...prev, event];
+      if (i === -1) return [...prev, { ...event, elapsedMs }];
       const next = [...prev];
-      next[i] = event;
+      next[i] = { ...event, elapsedMs: next[i].elapsedMs };
       return next;
     });
   }
@@ -43,12 +45,13 @@ export function InvestigationView() {
     setLoading(true);
     setWalletResult(null);
     setTraceResult(null);
-    setSteps([]);
+    setLines([]);
+    startedAtRef.current = Date.now();
     try {
       if (mode === "wallet") {
         setWalletResult(await analyzeWallet(walletAddress.trim(), recordStep));
       } else {
-        setTraceResult(await traceWallet(walletAddress.trim()));
+        setTraceResult(await traceWallet(walletAddress.trim(), recordStep));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Investigation failed");
@@ -109,10 +112,22 @@ export function InvestigationView() {
                 {loading ? "Investigating…" : "Investigate →"}
               </button>
               <p className="hint">Every wallet found is named onchain via ENSv2</p>
-              {mode === "wallet" && <ProgressChecklist steps={steps} />}
               {error && <div className="error-note">{error}</div>}
             </form>
           </div>
+        </div>
+      </section>
+
+      <section className="live-status-section" id="live-status">
+        <div className="wrap">
+          <div className="section-head">
+            <h2>Live workflow</h2>
+            <span className="addr mono">
+              {mode === "wallet" ? "/api/wallet" : "/api/trace"} ·{" "}
+              {loading ? "streaming" : lines.length > 0 ? "finished" : "idle"}
+            </span>
+          </div>
+          <LiveStatus lines={lines} endpoint={mode === "wallet" ? "/api/wallet" : "/api/trace"} live={loading} />
         </div>
       </section>
 
@@ -124,7 +139,7 @@ export function InvestigationView() {
             fundFlow={walletResult.fundFlow}
             riskAnalysis={walletResult.riskAnalysis}
           />
-          <AccountsSection fundFlow={walletResult.fundFlow} ensNetwork={walletResult.ensNetwork} />
+          <AccountsSection ensNetwork={walletResult.ensNetwork} />
         </>
       )}
 
