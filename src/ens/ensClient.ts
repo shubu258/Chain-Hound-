@@ -1,6 +1,6 @@
 // Lazy viem clients for talking to real, already-deployed ENSv2 contracts on Sepolia. Follows the
 // same "required env var, thrown descriptive Error, memoized getter" pattern as
-// src/tokenApi/client.ts's getAccessToken() and src/subgraph/openaiClient.ts's getOpenAiClient().
+// src/tokenApi/ethersFallback.ts's getRpcUrl() and src/subgraph/openaiClient.ts's getOpenAiClient().
 
 import { createPublicClient, createWalletClient, http, type Address, type PublicClient, type WalletClient } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Smoke-tests the "fundFlow" (Token API) block of POST /api/wallet.
+# Smoke-tests the "fundFlow" (on-chain, via ethers.js) block of POST /api/wallet.
 #
 # Usage:
-#   ./scripts/test-token-api-fundflow.sh
+#   ./scripts/test-fundflow-endpoint.sh
 #
-# Requires TOKEN_API_ACCESS_TOKEN to be set (in .env or the environment) — otherwise fundFlow
-# comes back as an error block by design (see Routes/dataFetching.ts) and this test fails loudly
-# rather than silently passing on empty arrays.
+# Requires ETHERS_RPC_URL to be set (in .env or the environment) — otherwise fundFlow comes back
+# as an error block by design (see Routes/dataFetching.ts) and this test fails loudly rather than
+# silently passing on empty arrays.
 #
 # If no server is already running at BASE_URL, this starts one with `npm run dev` and shuts it
 # down again when the script exits.
@@ -87,13 +87,13 @@ if fund_flow is None:
     print("FAIL  response has no 'fundFlow' key")
     sys.exit(1)
 
-if fund_flow.get("source") != "token-api":
-    print(f"FAIL  fundFlow.source is {fund_flow.get('source')!r}, expected 'token-api'")
+if fund_flow.get("source") != "onchain":
+    print(f"FAIL  fundFlow.source is {fund_flow.get('source')!r}, expected 'onchain'")
     sys.exit(1)
 
 if "error" in fund_flow:
     print(f"FAIL  fundFlow returned an error: {fund_flow['error']}")
-    print("      (check TOKEN_API_ACCESS_TOKEN is set and valid)")
+    print("      (check ETHERS_RPC_URL is set and valid)")
     sys.exit(1)
 
 sent = fund_flow.get("sent")

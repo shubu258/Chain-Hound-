@@ -4,7 +4,7 @@
 // unchanged from the inline version that used to live in the route handler.
 
 import { getWalletData, type Chain, type WalletData } from '../subgraph/dataRetrival.js';
-import { getWalletTransfers as getTokenApiTransfers } from '../tokenApi/walletTransfers.js';
+import { getWalletTransfers as getOnchainTransfers } from '../tokenApi/walletTransfers.js';
 import {
   analyseWalletRisk,
   type WalletAnalysisInput,
@@ -21,10 +21,10 @@ export type WalletAnalysisResult = WalletData & {
 };
 
 /**
- * Runs the Subgraph MCP (5 NL categories) and Token API fund-flow fetches in parallel for one
- * wallet, then risk-scores the combined result. Mirrors exactly what POST /api/wallet used to do
- * inline: a rejected Subgraph MCP fetch fails the whole call (thrown, not swallowed), while a
- * failed Token API fetch or risk-analysis call is additive — its error is surfaced inline on the
+ * Runs the Subgraph MCP (swaps + lending) and on-chain (ethers.js) fund-flow fetches in parallel
+ * for one wallet, then risk-scores the combined result. Mirrors exactly what POST /api/wallet used
+ * to do inline: a rejected Subgraph MCP fetch fails the whole call (thrown, not swallowed), while a
+ * failed fund-flow fetch or risk-analysis call is additive — its error is surfaced inline on the
  * returned object instead of aborting.
  */
 export async function analyzeWallet(
@@ -35,7 +35,7 @@ export async function analyzeWallet(
   onProgress({ step: 'fundflow', label: 'Fetching fund flow', status: 'start' });
   const [subgraphResult, fundFlowResult] = await Promise.allSettled([
     getWalletData(walletAddress, chain, onProgress),
-    getTokenApiTransfers(walletAddress, chain),
+    getOnchainTransfers(walletAddress, chain),
   ]);
 
   if (subgraphResult.status === 'rejected') {
@@ -45,9 +45,9 @@ export async function analyzeWallet(
 
   const fundFlow: WalletFundFlow =
     fundFlowResult.status === 'fulfilled'
-      ? { source: 'token-api', ...fundFlowResult.value }
+      ? { source: 'onchain', ...fundFlowResult.value }
       : {
-          source: 'token-api',
+          source: 'onchain',
           error: fundFlowResult.reason instanceof Error ? fundFlowResult.reason.message : 'Failed to fetch fund flow',
           sent: [],
           received: [],

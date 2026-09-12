@@ -424,7 +424,7 @@ attack tx
 
 | Need | Tool |
 |---|---|
-| Transfer history for *any* address | **The Graph — Token API** (native + ERC-20 balances, transfers with granular filters, holders, prices; MCP server available) |
+| Transfer history for *any* address | **ethers.js direct RPC** (scans ERC-20 `Transfer` event logs per wallet address against an RPC node) |
 | Live movement during an incident | **The Graph — Substreams** |
 | Protocol-specific enrichment (swaps) | **Uniswap subgraph / API** |
 
@@ -470,10 +470,10 @@ The ENS text record must **not** be a bare boolean. Store:
 - **Pool:** $5,000 · **1st: $2,500** / 2nd: $1,500 / 3rd: $1,000 (**3 payout slots**)
 - **Requirements:**
   - Build net-new AI tools or agents using The Graph as data source
-  - Consume **live** subgraph/Token API data — **not mock or static data**
+  - Consume **live** subgraph data — **not mock or static data**
   - Demonstrate meaningful *reasoning* with the data, not just display
   - Open-source repo + README + 2–4 min demo video
-- **Why load-bearing:** The Token API is the only source of full transfer history for an *arbitrary* address across chains — the trace spine. **Stage 1 does not exist without it, and nothing downstream runs.** Substreams adds live mode, which matters because during a real incident the money is moving *while you watch*.
+- **Why load-bearing:** the Subgraph MCP (5-category NL agent — swaps, lending, nft, bridge, fullSweep) is the project's use of The Graph as its blockchain-data source, satisfying this track's requirement on its own. Full transfer history for an *arbitrary* address (the trace spine) is reconstructed directly on-chain via ethers.js, since no single subgraph indexes "every transfer for an arbitrary wallet" — see §12.2.8. **Stage 1 does not exist without either piece, and nothing downstream runs.** Substreams adds live mode, which matters because during a real incident the money is moving *while you watch*.
 - **Fit:** ✅ Strong. Attribution + taint reasoning is unambiguously "meaningful work with data."
 
 ### 10.2 Selected: Hedera — AI & Agentic Payments
@@ -545,7 +545,7 @@ If a chosen track turns out to be blocked, over-subscribed, or technically infea
 **The Graph + Hedera + Ledger (AI Agents x Ledger)** — $6,000. Ledger's track wants agents using **device-backed secrets** via the Ledger Agent Stack / Key Ring CLI. Fit: the key that signs ChainHound's verdicts is the most security-critical secret in the system — if it leaks, anyone can forge accusations. Holding it in hardware is a defensible design decision, not decoration. Equal ceiling to Path A; swap in only if ENSv2 blocks.
 
 ### Stretch: The Graph's second track
-**Best Use of Composable/Standardized Graph Products** — $5,000 pool, 1st $2,500. Requires composing multiple Graph products / standardized schemas. We already use **Token API + Uniswap subgraph + MCP together**, which is exactly what it asks for. *Only viable if the 3-track cap counts per project rather than per sponsor — verify with organisers.*
+**Best Use of Composable/Standardized Graph Products** — $5,000 pool, 1st $2,500. Requires composing multiple Graph products / standardized schemas. *Note: this stretch pool originally assumed composing Token API + Uniswap subgraph + MCP. Token API has since been dropped in favor of direct ethers.js RPC reconstruction (§12.2.8), so the project now composes Subgraph MCP alone unless another distinct Graph product (e.g. Substreams) is added — re-verify eligibility before committing to this track.* Only viable if the 3-track cap counts per project rather than per sponsor — verify with organisers.
 
 ### Tracks explicitly ruled out
 1inch Aqua/SwapVM · Privy (B2B financial product) · Hedera Tokenization Studio · Arc Launch-to-Mainnet · all Continuity tracks (we have no pre-existing repo).
@@ -600,8 +600,8 @@ If a chosen track turns out to be blocked, over-subscribed, or technically infea
 
 **8. Fixed a technical error that would have blocked everything.**
 *Was:* pull wallet history through "Subgraph MCP across 15,000+ subgraphs."
-*Now:* The Graph's **Token API**.
-*Why:* **subgraphs are indexed per-protocol — there is no subgraph that returns "all transfers for an arbitrary address."** The original data source did not exist. Token API does exactly this job.
+*Now:* direct on-chain reconstruction via **ethers.js** — scan `Transfer` event logs for the wallet's address directly against an RPC node.
+*Why:* **subgraphs are indexed per-protocol — there is no subgraph that returns "all transfers for an arbitrary address."** The original data source did not exist. Reconstructing directly from RPC logs does exactly this job, without depending on a third-party indexing API.
 
 **Plus:** five tracks → three. Three integrations that are load-bearing beat five that look sprinkled on.
 
@@ -749,7 +749,7 @@ Do **not** build these — each one reads as gimmick to a security-literate judg
 
 | Risk | Mitigation |
 |---|---|
-| **Token API coverage** — does it return complete transfer history for arbitrary addresses at the depth we need? | **Verify first, before anything else is built.** This is the single point of failure for the entire project. |
+| **ethers.js RPC log-scanning coverage** — does `eth_getLogs` scanning (bounded by lookback window + RPC provider limits) surface complete-enough transfer history for arbitrary addresses at the depth we need? | **Verify first, before anything else is built.** This is the single point of failure for wallet fund-flow. |
 | **ENSv2 Sepolia tooling maturity** — new contracts, evolving docs | Subregistry-before-subname is a hard prerequisite; validate the deploy path early. Fallback: Path B or E (§11) |
 | **Trace explosion** | Sinks + allowlist + relative pruning + peel-chain collapse are all mandatory, not optional |
 | **Per-account lot accounting complexity** on Ethereum | This is the moat — but scope it to a single chain and a bounded hop depth |
@@ -801,9 +801,7 @@ One real incident, end to end. No slides.
 - **ERC-8004: Trustless Agents** — https://eips.ethereum.org/EIPS/eip-8004
 - **ENSv2 overview** — https://docs.ens.domains/ensv2/overview/
 - **ENSv2 readiness** — https://docs.ens.domains/web/ensv2-readiness/
-- **The Graph — Token API** — https://thegraph.com/token-api/
-- **Token API MCP** — https://thegraph.com/docs/ai-suite/token-api-mcp/introduction/
-- **Token API repo** — https://github.com/pinax-network/token-api/
+- **ethers.js** — https://docs.ethers.org/v6/
 
 ### Competitive landscape
 - **MetaSleuth** — https://metasleuth.io/

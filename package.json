@@ -20,13 +20,15 @@
     "dev": "tsx watch src/server.ts",
     "start": "node dist/server.js",
     "test:wallet-endpoint": "bash scripts/test-wallet-endpoint.sh",
-    "test:fundflow": "bash scripts/test-token-api-fundflow.sh",
+    "test:fundflow": "bash scripts/test-fundflow-endpoint.sh",
     "test:trace-endpoint": "bash scripts/test-trace-endpoint.sh",
+    "test:wallet-transfers": "tsx scripts/test-wallet-transfers.ts",
     "setup:ens": "tsx scripts/bootstrap-ens-parent.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",
+    "ethers": "^6.17.0",
     "express": "^5.2.1",
     "openai": "^7.10.0",
     "viem": "^2.31.6"
