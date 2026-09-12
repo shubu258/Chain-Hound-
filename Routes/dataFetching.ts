@@ -13,13 +13,13 @@ const DEFAULT_CHAIN: Chain = process.env.DEFAULT_CHAIN ?? 'mainnet';
  * Single entry point for the "give me everything for this wallet" flow: takes just a wallet
  * address and delegates to analyzeWallet (src/wallet/analyzeWallet.ts), which combines two
  * architecturally separate data sources, each clearly labeled:
- *  - top-level balances/transfers/swaps/nftOwnerships/lending: Subgraph MCP (protocol-level
- *    enrichment — discovers relevant subgraphs by keyword, no pre-configured contracts needed)
- *  - "fundFlow": The Graph Token API (fast, wallet-indexed, cross-token sent/received history)
+ *  - top-level "swaps" (Uniswap V3) and "lending" (Aave V3): Subgraph MCP, one prescribed query
+ *    each, each on its own Gemini API key (see src/subgraph/nlAgent.ts)
+ *  - "fundFlow": on-chain via ethers.js (fast, wallet-indexed, cross-token sent/received history)
  * These are intentionally not merged/blended — see src/tokenApi/walletTransfers.ts.
  *
- * Streams newline-delimited JSON instead of one blocking response: the full pipeline (5 NL
- * categories run sequentially, then risk analysis, then ENS registration per wallet) can take a
+ * Streams newline-delimited JSON instead of one blocking response: the full pipeline (swaps +
+ * lending run in parallel, then risk analysis, then ENS registration per wallet) can take a
  * while, so each step is reported as it happens rather than the client seeing nothing until the
  * very end. Line shapes: {"type":"progress",...ProgressEvent}, {"type":"result","data":{...}}, or
  * {"type":"fatal","error":string}. Because the response has already started streaming by the time

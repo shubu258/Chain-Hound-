@@ -1,5 +1,5 @@
 // Turns the combined output of Routes/dataFetching.ts (5 Subgraph-MCP categories from
-// src/subgraph/dataRetrival.ts + the Token API "fundFlow" block from
+// src/subgraph/dataRetrival.ts + the on-chain "fundFlow" block from
 // src/tokenApi/walletTransfers.ts) into a structured wallet risk analysis, via a single
 // non-tool-calling pass through the same Gemini client used by src/subgraph/nlAgent.ts.
 //
@@ -33,7 +33,7 @@ export interface RiskAnalysis {
 }
 
 export interface WalletFundFlow extends Partial<WalletTransfersResult> {
-  source: 'token-api';
+  source: 'onchain';
   error?: string;
 }
 
@@ -42,13 +42,13 @@ export type WalletAnalysisInput = WalletData & { fundFlow: WalletFundFlow };
 
 const SYSTEM_PROMPT = `You are a blockchain wallet risk analyst. You are given the full JSON output of a
 wallet investigation, combining two data sources:
-- Subgraph MCP sections: "swaps", "lending", "nft", "bridge", "fullSweep" — each an object of shape
+- Subgraph MCP sections: "swaps" (Uniswap V3), "lending" (Aave V3) — each an object of shape
   { results?: [...], sourcesUsed?: [...], error?: string, truncated?: true }. An "error" or a missing
   "results" means that section could not be queried, not that the wallet has no activity there.
-- "fundFlow": The Graph Token API's cross-token sent/received transfer history for the wallet
+- "fundFlow": on-chain (ethers.js) cross-token sent/received transfer history for the wallet
   ({ sent: [...], received: [...], all: [...], error?: string }).
 
-Analyze each section in turn — swaps, lending, nft, bridge, fullSweep, and fundFlow — looking for
+Analyze each section in turn — swaps, lending, and fundFlow — looking for
 risk-relevant signals (large or rapid fund movements, liquidations, mixer/bridge hopping,
 wash-trading-like NFT patterns, brand-new or dormant-then-suddenly-active wallets, etc).
 
@@ -81,7 +81,7 @@ Respond with ONLY a single JSON object (no prose, no markdown fences) of exactly
 }`;
 
 // Safety cap so a wallet with pathological transfer/event volume doesn't blow the model's context
-// window — mirrors the MAX_PAGES guard in src/tokenApi/walletTransfers.ts. The model is told when
+// window — mirrors the block-range bound in src/tokenApi/ethersFallback.ts. The model is told when
 // a list was cut down so it reports the cutoff as a data gap rather than assuming completeness.
 const MAX_ITEMS_PER_LIST = 200;
 

@@ -10,9 +10,6 @@ export interface WalletData {
     chain: Chain;
     swaps: NlCategoryResult;
     lending: NlCategoryResult;
-    nft: NlCategoryResult;
-    bridge: NlCategoryResult;
-    fullSweep: NlCategoryResult;
 }
 
 const ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
@@ -29,9 +26,9 @@ function normalizeAddress(address: string): string {
 }
 
 /**
- * Runs the combined 5-category Gemini tool-calling session (src/subgraph/nlAgent.ts) for
- * `walletAddress` — one Gemini conversation instead of 5 separate ones, to stay well under
- * free-tier quota limits. See nlPrompts.ts for the full rationale.
+ * Runs the 2 prescribed single-query category lookups (src/subgraph/nlAgent.ts) for
+ * `walletAddress` — swaps and lending, each its own Gemini conversation with its own API key (own
+ * free-tier quota bucket). See nlPrompts.ts for the full rationale.
  */
 export async function getWalletData(
     walletAddress: string,
