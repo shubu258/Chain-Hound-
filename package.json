@@ -18,7 +18,7 @@
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "dev": "tsx watch src/server.ts",
-    "start": "node dist/server.js",
+    "start": "node dist/src/server.js",
     "test:wallet-endpoint": "bash scripts/test-wallet-endpoint.sh",
     "test:fundflow": "bash scripts/test-fundflow-endpoint.sh",
     "test:trace-endpoint": "bash scripts/test-trace-endpoint.sh",
