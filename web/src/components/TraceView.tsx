@@ -11,9 +11,27 @@ function shortAddress(address: string): string {
   return address.length > 14 ? `${address.slice(0, 8)}...${address.slice(-6)}` : address;
 }
 
+// The wallet's own short label is the first segment of its ENS name — the rest is the parent
+// chain (root wallet's name + chainhound.eth), an implementation detail of the hierarchy.
+function leafLabel(ensName: string): string {
+  return ensName.split(".")[0] ?? ensName;
+}
+
+function WalletName({ wallet, ensName }: { wallet: string; ensName?: string }) {
+  if (!ensName) return <span className="ens mono">{shortAddress(wallet)}</span>;
+  return (
+    <span className="acc-label-wrap ens mono" title={ensName} tabIndex={0}>
+      {leafLabel(ensName)}
+      <span className="acc-tooltip mono">{ensName}</span>
+    </span>
+  );
+}
+
 export function TraceView({ result }: { result: TraceFundFlowResponse }) {
   const root = result.nodes.find((n) => n.depth === 0);
   const hops = result.nodes.filter((n) => n.depth === 1);
+  const { overallRisk } = result;
+  const overallColor = overallRisk.label ? (LABEL_COLOR[overallRisk.label] ?? "var(--orange)") : "var(--ink-soft)";
 
   return (
     <>
@@ -27,12 +45,39 @@ export function TraceView({ result }: { result: TraceFundFlowResponse }) {
             </span>
           </div>
 
+          <div className="score-block">
+            <p className="score-num" style={{ color: overallColor }}>
+              {overallRisk.score ?? "—"}
+            </p>
+            <p className="score-label">{overallRisk.label ? `${overallRisk.label.toUpperCase()} RISK` : "UNSCORED"}</p>
+            <div className="score-bar">
+              <div
+                className="score-bar-fill"
+                style={{
+                  width: overallRisk.score !== undefined ? `${Math.min(100, Math.max(0, overallRisk.score))}%` : "0%",
+                  background: overallColor,
+                }}
+              />
+            </div>
+            <div className="score-meta">
+              <span className={`acc-risk ${overallRisk.passed ? "low" : "high"} mono`}>
+                {overallRisk.passed ? "✓ TRAIL PASSED" : "✗ TRAIL FAILED"}
+              </span>
+              <span>
+                {overallRisk.scoredNodes}/{overallRisk.totalNodes} wallets scored
+              </span>
+            </div>
+            <p className="raw mono" style={{ marginTop: 8 }}>
+              {overallRisk.reason}
+            </p>
+          </div>
+
           <div className="account-list">
             {root && (
               <div className="account-row root">
                 <span className="rel-icon">●</span>
                 <div className="acc-name">
-                  <span className="ens mono">{shortAddress(root.wallet)}</span>
+                  <WalletName wallet={root.wallet} ensName={root.ensName} />
                   <span className="raw mono">root wallet</span>
                 </div>
                 <span className="acc-rel mono">ROOT</span>
@@ -47,7 +92,7 @@ export function TraceView({ result }: { result: TraceFundFlowResponse }) {
                 <div className="account-row" key={node.wallet}>
                   <span className="rel-icon">↗</span>
                   <div className="acc-name">
-                    <span className="ens mono">{shortAddress(node.wallet)}</span>
+                    <WalletName wallet={node.wallet} ensName={node.ensName} />
                     <span className="raw mono">
                       {node.isSink ? `sink${node.sinkType ? ` · ${node.sinkType}` : ""}` : "1 hop out"}
                     </span>

@@ -35,7 +35,7 @@ export interface WalletTransfer {
 }
 
 export interface WalletFundFlow {
-  source: "token-api";
+  source: "onchain";
   error?: string;
   sent?: WalletTransfer[];
   received?: WalletTransfer[];
@@ -69,6 +69,7 @@ export interface TraceNode {
   isSink: boolean;
   sinkType?: string;
   error?: true;
+  ensName?: string;
 }
 
 export interface TraceEdge {
@@ -80,11 +81,22 @@ export interface TraceEdge {
   timestamp: number;
 }
 
+export interface TraceOverallRisk {
+  score?: number;
+  label?: RiskLabel;
+  passed: boolean;
+  reason: string;
+  driverWallet?: string;
+  scoredNodes: number;
+  totalNodes: number;
+}
+
 export interface TraceFundFlowResponse {
   rootWallet: string;
   nodes: TraceNode[];
   edges: TraceEdge[];
   stats: { totalNodesAnalyzed: number; totalEdgesFound: number };
+  overallRisk: TraceOverallRisk;
 }
 
 export interface ApiError {
