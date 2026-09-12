@@ -1,0 +1,220 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "ChainHound Wallet Verification API",
+    "version": "1.0.0",
+    "description": "A wallet reputation gate any platform can call before letting an address in: pass a wallet address, get back a deterministic risk score and label backed by live on-chain data (ethers.js/Alchemy) and The Graph's Subgraph MCP, and apply your own threshold (e.g. \"reject anything above 40\"). Two verification depths — a fast single-wallet check, and a deeper trail check that also verifies the wallet's most recent counterparties. Built for ETHOnline 2026."
+  },
+  "servers": [
+    { "url": "https://chain-hound-production.up.railway.app" }
+  ],
+  "paths": {
+    "/api/agent/wallet": {
+      "post": {
+        "operationId": "verifyWallet",
+        "summary": "Single-wallet verification — risk-score one wallet from its own history",
+        "description": "The fast, shallow check: risk-scores a wallet from its own transaction history alone (Uniswap V3 swaps, Aave V3 lending, on-chain fund flow) — no counterparties followed. Use this when you just need to know \"is this one address clean?\" before an approval, deposit, or sign-up.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/WalletRequest" },
+              "example": { "walletAddress": "0x8f3a91c2b7e4a1f0d9c6b5e3a2f1d0c9b8a7e6f5" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Risk score, label, and evidence for the wallet",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/WalletResponse" } }
+            }
+          },
+          "400": { "description": "walletAddress is missing or not a valid EVM address" },
+          "502": { "description": "Lookup failed (upstream data source error)" }
+        }
+      }
+    },
+    "/api/agent/trace": {
+      "post": {
+        "operationId": "verifyWalletTrail",
+        "summary": "Trail verification — risk-score a wallet plus its most recent counterparties",
+        "description": "The deeper, more secure check: verifies the wallet plus its most recent outgoing counterparties (one hop out), risk-scores each independently, and rolls the results into one deterministic pass/fail trail verdict — the trail is only as clean as its riskiest link. Use this for higher-stakes gates (large withdrawals, custody onboarding) where a clean wallet fed by a dirty one still shouldn't pass. Every wallet returned is also registered as a real ENSv2 subname on Sepolia.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/TraceRequest" },
+              "example": { "walletAddress": "0x8f3a91c2b7e4a1f0d9c6b5e3a2f1d0c9b8a7e6f5" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Trail result with per-wallet risk scores and an overall verdict",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/TraceResponse" } }
+            }
+          },
+          "400": { "description": "walletAddress is missing or not a valid EVM address" },
+          "502": { "description": "Trace failed (upstream data source error)" }
+        }
+      }
+    },
+    "/api/agent/uniswap-activity": {
+      "post": {
+        "operationId": "getUniswapActivity",
+        "summary": "Get a wallet's recent Uniswap V3 activity (supporting evidence, chainable)",
+        "description": "Live Uniswap V3 subgraph lookup (via The Graph's Subgraph MCP) for one wallet's recent swap activity — the same lookup the two verification endpoints above run internally, exposed standalone so it can be chained as its own step (e.g. pull this as supporting evidence after a wallet is flagged by /agent/wallet or /agent/trace).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ActivityRequest" },
+              "example": { "walletAddress": "0x8f3a91c2b7e4a1f0d9c6b5e3a2f1d0c9b8a7e6f5" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recent Uniswap V3 swap activity for the wallet",
+            "content": {
+              "application/json": { "schema": { "$ref": "#/components/schemas/ActivityResponse" } }
+            }
+          },
+          "400": { "description": "walletAddress is missing or not a valid EVM address" },
+          "502": { "description": "Lookup failed (upstream subgraph error)" }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "WalletRequest": {
+        "type": "object",
+        "required": ["walletAddress"],
+        "properties": {
+          "walletAddress": { "type": "string", "description": "0x + 40 hex chars" },
+          "chain": { "type": "string", "default": "mainnet" }
+        }
+      },
+      "TraceRequest": {
+        "type": "object",
+        "required": ["walletAddress"],
+        "properties": {
+          "walletAddress": { "type": "string", "description": "0x + 40 hex chars" },
+          "chain": { "type": "string", "default": "ethereum" },
+          "recentTxLimit": { "type": "integer", "default": 2, "description": "How many of the wallet's most recent outgoing transfers to follow" }
+        }
+      },
+      "ActivityRequest": {
+        "type": "object",
+        "required": ["walletAddress"],
+        "properties": {
+          "walletAddress": { "type": "string", "description": "0x + 40 hex chars" },
+          "chain": { "type": "string", "default": "mainnet" }
+        }
+      },
+      "RiskFlag": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["High", "Medium", "Low"] },
+          "category": {
+            "type": "string",
+            "enum": ["Fund Flow", "Protocol Behavior", "Bridge Activity", "NFT Behavior", "Wallet Identity"]
+          },
+          "title": { "type": "string" },
+          "detail": { "type": "string" }
+        }
+      },
+      "RiskAnalysis": {
+        "type": "object",
+        "description": "Present when risk scoring succeeded. IMPORTANT: if scoring fails (upstream model/data error), this field is instead `{ \"error\": string }` with no riskScore/riskLabel at all — check for `.error` before reading `.riskScore`. Treat that case as unscoreable, not as \"clean\": comparisons like `riskScore > 40` silently evaluate to false on `undefined`, which fails OPEN (lets an unscoreable wallet through) if you don't check for `.error` first.",
+        "properties": {
+          "riskScore": { "type": "number", "description": "0-100 — threshold on this to decide access" },
+          "riskLabel": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"] },
+          "flags": { "type": "array", "items": { "$ref": "#/components/schemas/RiskFlag" } },
+          "positiveSignals": { "type": "array", "items": { "type": "string" } },
+          "dataGaps": { "type": "array", "items": { "type": "string" } },
+          "summary": { "type": "string" },
+          "error": { "type": "string", "description": "Present instead of the fields above if risk scoring failed" }
+        }
+      },
+      "WalletResponse": {
+        "type": "object",
+        "properties": {
+          "walletAddress": { "type": "string" },
+          "chain": { "type": "string" },
+          "swaps": { "type": "object", "description": "Raw Uniswap V3 subgraph result (see /api/agent/uniswap-activity)" },
+          "lending": { "type": "object", "description": "Raw Aave V3 subgraph result" },
+          "fundFlow": { "type": "object", "description": "sent/received on-chain transfers" },
+          "riskAnalysis": { "$ref": "#/components/schemas/RiskAnalysis" },
+          "ensNetwork": { "type": "object", "description": "root wallet + counterparties, each named via ENSv2" }
+        }
+      },
+      "TraceResponse": {
+        "type": "object",
+        "properties": {
+          "rootWallet": { "type": "string" },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "wallet": { "type": "string" },
+                "depth": { "type": "integer", "enum": [0, 1] },
+                "riskScore": { "type": "number", "description": "Absent if this node couldn't be scored" },
+                "riskLabel": { "type": "string", "enum": ["Low", "Medium", "High", "Critical"] },
+                "topFlags": { "type": "array", "items": { "$ref": "#/components/schemas/RiskFlag" } },
+                "isSink": { "type": "boolean", "description": "Known exchange/bridge/mixer deposit address, or a dead end (no outgoing transfers)" },
+                "sinkType": { "type": "string" },
+                "error": { "type": "boolean", "description": "true if analysis itself failed for this wallet (e.g. upstream data source unreachable) — distinct from being scored Low risk" },
+                "ensName": { "type": "string" }
+              }
+            }
+          },
+          "edges": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": { "type": "string" },
+                "to": { "type": "string" },
+                "amount": { "type": "string" },
+                "token": { "type": "string" },
+                "txHash": { "type": "string" },
+                "timestamp": { "type": "integer" }
+              }
+            }
+          },
+          "stats": {
+            "type": "object",
+            "properties": {
+              "totalNodesAnalyzed": { "type": "integer" },
+              "totalEdgesFound": { "type": "integer" }
+            }
+          },
+          "overallRisk": {
+            "type": "object",
+            "properties": {
+              "score": { "type": "number", "description": "0-100 — threshold on this to decide access. Absent if no node in the trail could be scored" },
+              "label": { "type": "string" },
+              "passed": { "type": "boolean", "description": "convenience flag: Low/Medium -> true, High/Critical -> false, and false (fail closed) if nothing could be scored" },
+              "reason": { "type": "string" },
+              "scoredNodes": { "type": "integer", "description": "How many of totalNodes below actually got a score — check this isn't 0 before trusting `passed`" },
+              "totalNodes": { "type": "integer" }
+            }
+          }
+        }
+      },
+      "ActivityResponse": {
+        "type": "object",
+        "properties": {
+          "walletAddress": { "type": "string" },
+          "chain": { "type": "string" },
+          "swaps": { "type": "object", "description": "Raw Uniswap V3 subgraph result for this wallet's recent swaps" }
+        }
+      }
+    }
+  }
+}
