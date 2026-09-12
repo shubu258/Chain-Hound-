@@ -14,7 +14,7 @@ const DEFAULT_TRACE_CHAIN = 'ethereum';
  * TraceNode. A registration failure is logged and leaves ensName unset on the affected node(s)
  * rather than failing the whole trace — the numbers/graph are still useful without names.
  */
-async function attachEnsNames(rootWallet: string, nodes: TraceNode[], onProgress: ProgressEmitter): Promise<TraceNode[]> {
+export async function attachEnsNames(rootWallet: string, nodes: TraceNode[], onProgress: ProgressEmitter): Promise<TraceNode[]> {
   const neighborWallets = nodes.filter((n) => n.depth === 1).map((n) => n.wallet);
 
   try {
