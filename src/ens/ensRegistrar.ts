@@ -2,9 +2,13 @@
 // searched, plus every counterparty found in its transaction history — so the frontend can print
 // a human/recognizable name next to every raw address instead of just hex.
 //
-// Naming scheme (see src/ens/labelUtils.ts): the label for a wallet is always its own address
-// (lowercased, no 0x), so the SAME wallet gets the SAME leftmost label everywhere it appears,
-// whether it's the root of one search or a counterparty in another.
+// Naming scheme (see src/ens/labelUtils.ts): the label for a wallet is a short, pronounceable,
+// deterministic string derived from its address (e.g. "brave-falcon-042"), so the SAME wallet gets
+// the SAME leftmost label everywhere it appears, whether it's the root of one search or a
+// counterparty in another. This is a many-to-one hash, not the address itself, so a different
+// wallet could in principle land on the same label (~1-in-4.1M) — resolveLabelSlot below verifies
+// a "label already registered" state actually resolves to the wallet we expect before treating it
+// as ours, and falls back to the next salted label on a genuine collision.
 //
 // Hierarchy: `<rootLabel>.<parentName>` for the root wallet, `<counterpartyLabel>.<rootLabel>.
 // <parentName>` for each counterparty — a real ENSv2 subregistry-of-a-subregistry nesting, not
@@ -15,7 +19,7 @@
 // (no ETHRegistrar commit-reveal, no payment token) — that flow is only needed once, for the
 // parent name itself, in the bootstrap script.
 
-import { keccak256, namehash, toBytes, zeroAddress, type Address } from 'viem';
+import { getAddress, keccak256, namehash, toBytes, zeroAddress, type Address } from 'viem';
 
 import { noopProgress, type ProgressEmitter } from '../progress.js';
 import { getEnsPublicClient, getEnsWalletClient, getEnsSignerAddress } from './ensClient.js';
@@ -138,6 +142,51 @@ async function setAddrRecord(resolverAddress: Address, ensName: string, walletAd
   await publicClient.waitForTransactionReceipt({ hash });
 }
 
+async function resolveAddr(resolverAddress: Address, ensName: string): Promise<Address> {
+  const publicClient = getEnsPublicClient();
+  const node = namehash(ensName);
+  return publicClient.readContract({
+    address: resolverAddress,
+    abi: permissionedResolverAbi,
+    functionName: 'addr',
+    args: [node],
+  }) as Promise<Address>;
+}
+
+// Safety net for labelUtils.ts's hash-derived labels: a "registered" state no longer implies
+// "registered to us" the way it did when the label WAS the address (1:1). Before treating a
+// registered label as this wallet's, this verifies the resolver actually points at it; on a
+// genuine collision (a different wallet holds that label), it retries with the next salted label.
+const MAX_LABEL_COLLISION_RETRIES = 5;
+
+async function resolveLabelSlot(
+  registryAddress: Address,
+  resolverAddress: Address,
+  buildName: (label: string) => string,
+  walletAddress: Address,
+): Promise<{ label: string; ensName: string; alreadyRegistered: boolean }> {
+  for (let salt = 0; salt <= MAX_LABEL_COLLISION_RETRIES; salt++) {
+    const label = addressToLabel(walletAddress, salt);
+    const ensName = buildName(label);
+    const state = await getLabelState(registryAddress, label);
+
+    if (state.status === REGISTRY_STATUS_AVAILABLE) {
+      return { label, ensName, alreadyRegistered: false };
+    }
+    if (state.status === REGISTRY_STATUS_REGISTERED) {
+      const existing = await resolveAddr(resolverAddress, ensName);
+      if (existing.toLowerCase() === walletAddress.toLowerCase()) {
+        return { label, ensName, alreadyRegistered: true };
+      }
+      continue; // genuine collision with a different wallet — try the next salted label
+    }
+    throw new Error(`Label "${label}" under ${ensName} is in an unexpected state (${state.status}), cannot register`);
+  }
+  throw new Error(
+    `Could not find a free or matching label for ${walletAddress} after ${MAX_LABEL_COLLISION_RETRIES + 1} attempts`,
+  );
+}
+
 /**
  * Ensures the root wallet is registered as `<label>.<parentName>` with its own subregistry
  * (so counterparties can nest under it). Idempotent: if already registered, just returns the
@@ -145,11 +194,18 @@ async function setAddrRecord(resolverAddress: Address, ensName: string, walletAd
  */
 export async function registerRootWallet(rootWalletAddress: string): Promise<NamedWallet & { subregistryAddress: Address }> {
   const { parentName, parentSubregistry, parentResolver } = getParentConfig();
-  const label = addressToLabel(rootWalletAddress);
-  const ensName = buildEnsName(label, parentName);
+  // getAddress validates the format and returns a properly EIP-55-checksummed address — viem's
+  // contract calls reject a mixed-case address that doesn't exactly match its checksum, which a
+  // plain `as Address` cast (no runtime check) would silently let through.
+  const wallet = getAddress(rootWalletAddress);
+  const { label, ensName, alreadyRegistered } = await resolveLabelSlot(
+    parentSubregistry,
+    parentResolver,
+    (l) => buildEnsName(l, parentName),
+    wallet,
+  );
 
-  const state = await getLabelState(parentSubregistry, label);
-  if (state.status === REGISTRY_STATUS_REGISTERED) {
+  if (alreadyRegistered) {
     const publicClient = getEnsPublicClient();
     const subregistryAddress = await publicClient.readContract({
       address: parentSubregistry,
@@ -158,9 +214,6 @@ export async function registerRootWallet(rootWalletAddress: string): Promise<Nam
       args: [label],
     });
     return { wallet: rootWalletAddress, ensName, subregistryAddress: subregistryAddress as Address };
-  }
-  if (state.status !== REGISTRY_STATUS_AVAILABLE) {
-    throw new Error(`Label "${label}" under ${parentName} is in an unexpected state (${state.status}), cannot register`);
   }
 
   const signer = getEnsSignerAddress();
@@ -173,7 +226,7 @@ export async function registerRootWallet(rootWalletAddress: string): Promise<Nam
     resolverAddress: parentResolver,
     roleBitmap: ROLES_ALL,
   });
-  await setAddrRecord(parentResolver, ensName, rootWalletAddress as Address);
+  await setAddrRecord(parentResolver, ensName, wallet);
 
   return { wallet: rootWalletAddress, ensName, subregistryAddress };
 }
@@ -188,15 +241,16 @@ export async function registerCounterpartyWallet(
   counterpartyAddress: string,
 ): Promise<NamedWallet> {
   const { parentResolver } = getParentConfig();
-  const label = addressToLabel(counterpartyAddress);
-  const ensName = buildEnsName(label, rootEnsName);
+  const wallet = getAddress(counterpartyAddress);
+  const { label, ensName, alreadyRegistered } = await resolveLabelSlot(
+    rootSubregistryAddress,
+    parentResolver,
+    (l) => buildEnsName(l, rootEnsName),
+    wallet,
+  );
 
-  const state = await getLabelState(rootSubregistryAddress, label);
-  if (state.status === REGISTRY_STATUS_REGISTERED) {
+  if (alreadyRegistered) {
     return { wallet: counterpartyAddress, ensName };
-  }
-  if (state.status !== REGISTRY_STATUS_AVAILABLE) {
-    throw new Error(`Label "${label}" under ${rootEnsName} is in an unexpected state (${state.status}), cannot register`);
   }
 
   const signer = getEnsSignerAddress();
@@ -208,7 +262,7 @@ export async function registerCounterpartyWallet(
     resolverAddress: parentResolver,
     roleBitmap: 0n,
   });
-  await setAddrRecord(parentResolver, ensName, counterpartyAddress as Address);
+  await setAddrRecord(parentResolver, ensName, wallet);
 
   return { wallet: counterpartyAddress, ensName };
 }

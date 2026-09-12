@@ -1,27 +1,18 @@
-import type { WalletFundFlow, WalletNetworkResult } from "@/lib/types";
+import type { WalletNetworkResult } from "@/lib/types";
 import { hasEnsNetwork } from "@/lib/types";
 
-function shortAddress(address: string): string {
-  return address.length > 14 ? `${address.slice(0, 8)}...${address.slice(-6)}` : address;
+function indexLabel(i: number): string {
+  return String(i + 1).padStart(2, "0");
 }
 
-/** Finds one transfer with this counterparty so the row can show a relationship + amount. */
-function findRelationship(counterparty: string, fundFlow: WalletFundFlow) {
-  const c = counterparty.toLowerCase();
-  const sent = fundFlow.sent?.find((t) => t.to.toLowerCase() === c);
-  if (sent) return { relation: "sent to", amount: `${sent.amount} ${sent.tokenSymbol}`, icon: "↗" };
-  const received = fundFlow.received?.find((t) => t.from.toLowerCase() === c);
-  if (received) return { relation: "received from", amount: `${received.amount} ${received.tokenSymbol}`, icon: "↙" };
-  return { relation: "related", amount: "—", icon: "•" };
+// The wallet's own short label is the first segment of its ENS name — the rest is the parent
+// chain (root wallet's name + chainhound.eth), an implementation detail of the hierarchy, not
+// part of what a person would actually say/remember.
+function leafLabel(ensName: string): string {
+  return ensName.split(".")[0] ?? ensName;
 }
 
-export function AccountsSection({
-  fundFlow,
-  ensNetwork,
-}: {
-  fundFlow: WalletFundFlow;
-  ensNetwork: WalletNetworkResult | { error: string };
-}) {
+export function AccountsSection({ ensNetwork }: { ensNetwork: WalletNetworkResult | { error: string } }) {
   if (!hasEnsNetwork(ensNetwork)) {
     return (
       <section className="accounts" id="accounts">
@@ -46,34 +37,27 @@ export function AccountsSection({
 
         <div className="account-list">
           <div className="account-row root">
-            <span className="rel-icon">●</span>
-            <div className="acc-name">
-              <span className="ens mono">{ensNetwork.root.ensName}</span>
-              <span className="raw mono">{shortAddress(ensNetwork.root.wallet)} · root wallet</span>
-            </div>
-            <span className="acc-rel mono">ROOT</span>
-            <span className="acc-amount mono">—</span>
-            <span className="acc-risk unknown mono">NAMED</span>
+            <span className="acc-index">●</span>
+            <span className="acc-label-wrap" title={ensNetwork.root.ensName} tabIndex={0}>
+              <span className="acc-label">{leafLabel(ensNetwork.root.ensName)}</span>
+              <span className="acc-tooltip mono">{ensNetwork.root.ensName}</span>
+            </span>
+            <span className="acc-status mono">✓ onchain</span>
           </div>
 
           {ensNetwork.counterparties.length === 0 ? (
             <p className="empty-note">No counterparty wallets found in this wallet&apos;s transfer history.</p>
           ) : (
-            ensNetwork.counterparties.map((counterparty) => {
-              const { relation, amount, icon } = findRelationship(counterparty.wallet, fundFlow);
-              return (
-                <div className="account-row" key={counterparty.wallet}>
-                  <span className="rel-icon">{icon}</span>
-                  <div className="acc-name">
-                    <span className="ens mono">{counterparty.ensName}</span>
-                    <span className="raw mono">{shortAddress(counterparty.wallet)}</span>
-                  </div>
-                  <span className="acc-rel mono">{relation}</span>
-                  <span className="acc-amount mono">{amount}</span>
-                  <span className="acc-risk unknown mono">NAMED</span>
-                </div>
-              );
-            })
+            ensNetwork.counterparties.map((counterparty, i) => (
+              <div className="account-row" key={counterparty.wallet}>
+                <span className="acc-index mono">{indexLabel(i)}</span>
+                <span className="acc-label-wrap" title={counterparty.ensName} tabIndex={0}>
+                  <span className="acc-label">{leafLabel(counterparty.ensName)}</span>
+                  <span className="acc-tooltip mono">{counterparty.ensName}</span>
+                </span>
+                <span className="acc-status mono">✓ onchain</span>
+              </div>
+            ))
           )}
         </div>
       </div>
