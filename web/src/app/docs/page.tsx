@@ -24,7 +24,9 @@ export default function DocsPage() {
           <p className="lede" style={{ marginBottom: 40, maxWidth: "70ch" }}>
             Two verification depths, same <code className="mono">riskScore</code> /{" "}
             <code className="mono">riskLabel</code> shape both times — pick the one that matches how much you need
-            to trust the answer:
+            to trust the answer. Both skip ENS name registration (a sequential on-chain write, and the slowest part
+            of the pipeline) — a gate needs a fast verdict, not a pretty name. The web app at chain-hound-nu.vercel.app
+            still registers every wallet as a real ENSv2 subname; these two endpoints just don&apos;t wait on it.
           </p>
 
           <div className="doc-endpoint">
@@ -59,10 +61,6 @@ export default function DocsPage() {
     "flags": [ { "severity": "Medium",
       "title": "..." } ],
     "positiveSignals": [ "..." ]
-  },
-  "ensNetwork": {
-    "root": { "ensName":
-      "amber-zephyr-152.chainhound.eth" }
   }
 }`}</pre>
                 <p className="hint" style={{ textAlign: "left", marginTop: 8 }}>
@@ -84,7 +82,7 @@ export default function DocsPage() {
               (one hop out), risk-scores each independently, and rolls the results into one deterministic pass/fail
               trail verdict — the trail is only as clean as its riskiest link. Use this for higher-stakes gates
               (large withdrawals, custody onboarding) where a clean wallet fed by a dirty one still shouldn&apos;t
-              pass. Every wallet returned is also registered as a real ENSv2 subname on Sepolia.
+              pass.
             </p>
             <div className="doc-code-grid">
               <div>

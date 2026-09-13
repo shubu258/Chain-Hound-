@@ -39,7 +39,7 @@
       "post": {
         "operationId": "verifyWalletTrail",
         "summary": "Trail verification — risk-score a wallet plus its most recent counterparties",
-        "description": "The deeper, more secure check: verifies the wallet plus its most recent outgoing counterparties (one hop out), risk-scores each independently, and rolls the results into one deterministic pass/fail trail verdict — the trail is only as clean as its riskiest link. Use this for higher-stakes gates (large withdrawals, custody onboarding) where a clean wallet fed by a dirty one still shouldn't pass. Every wallet returned is also registered as a real ENSv2 subname on Sepolia.",
+        "description": "The deeper, more secure check: verifies the wallet plus its most recent outgoing counterparties (one hop out), risk-scores each independently, and rolls the results into one deterministic pass/fail trail verdict — the trail is only as clean as its riskiest link. Use this for higher-stakes gates (large withdrawals, custody onboarding) where a clean wallet fed by a dirty one still shouldn't pass.",
         "requestBody": {
           "required": true,
           "content": {
@@ -148,8 +148,7 @@
           "swaps": { "type": "object", "description": "Raw Uniswap V3 subgraph result (see /api/agent/uniswap-activity)" },
           "lending": { "type": "object", "description": "Raw Aave V3 subgraph result" },
           "fundFlow": { "type": "object", "description": "sent/received on-chain transfers" },
-          "riskAnalysis": { "$ref": "#/components/schemas/RiskAnalysis" },
-          "ensNetwork": { "type": "object", "description": "root wallet + counterparties, each named via ENSv2" }
+          "riskAnalysis": { "$ref": "#/components/schemas/RiskAnalysis" }
         }
       },
       "TraceResponse": {
@@ -168,8 +167,7 @@
                 "topFlags": { "type": "array", "items": { "$ref": "#/components/schemas/RiskFlag" } },
                 "isSink": { "type": "boolean", "description": "Known exchange/bridge/mixer deposit address, or a dead end (no outgoing transfers)" },
                 "sinkType": { "type": "string" },
-                "error": { "type": "boolean", "description": "true if analysis itself failed for this wallet (e.g. upstream data source unreachable) — distinct from being scored Low risk" },
-                "ensName": { "type": "string" }
+                "error": { "type": "boolean", "description": "true if analysis itself failed for this wallet (e.g. upstream data source unreachable) — distinct from being scored Low risk" }
               }
             }
           },
