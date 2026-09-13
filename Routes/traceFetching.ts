@@ -6,7 +6,7 @@ import type { ProgressEmitter } from '../src/progress.js';
 
 const router = Router();
 
-const DEFAULT_TRACE_CHAIN = 'ethereum';
+const DEFAULT_TRACE_CHAIN = 'mainnet';
 
 /**
  * Registers the root wallet + every neighbor node as real ENSv2 subnames (same registrar used by

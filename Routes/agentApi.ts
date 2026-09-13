@@ -6,7 +6,7 @@ import { traceFundFlow } from '../src/trace/traceEngine.js';
 const router = Router();
 
 const DEFAULT_CHAIN: Chain = process.env.DEFAULT_CHAIN ?? 'mainnet';
-const DEFAULT_TRACE_CHAIN = 'ethereum';
+const DEFAULT_TRACE_CHAIN = 'mainnet';
 
 /**
  * Machine-callable counterparts of POST /api/wallet and POST /api/trace — same underlying
